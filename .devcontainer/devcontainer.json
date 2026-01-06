@@ -1,0 +1,31 @@
+{
+  "name": "sfm",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "runArgs": [
+    "--name",
+    "sfm",
+    "--device",
+    "nvidia.com/gpu=all",
+    "--privileged",
+    "-v",
+    "/dev:/dev",
+    "-v",
+    "/tmp/.X11-unix:/tmp/.X11-unix",
+    "-v",
+    "/run/user/1000/wayland-1:/tmp/wayland-1",
+    "-v",
+    "${localEnv:HOME}/Perso/startup/datasets:/workspace/datasets",
+    "--net",
+    "host"
+  ],
+  "containerEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "WAYLAND_DISPLAY": "wayland-1",
+    "XDG_RUNTIME_DIR": "/tmp"
+  },
+  "remoteUser": "zed",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "workspaceFolder": "/workspace"
+}

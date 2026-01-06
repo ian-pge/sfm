@@ -1,0 +1,67 @@
+# Reconstruction Pipeline: HLOC + GLOMAP
+
+This pipeline automates the creation of a sparse 3D reconstruction from a set of images using modern deep learning features (ALIKED + LightGlue) and a global structure-from-motion mapper (GLOMAP).
+
+## Overview
+
+The pipeline performs the following steps:
+1.  **Feature Extraction**: Extracts keypoints using **ALIKED**.
+2.  **Matching**: Matches keypoints between image pairs using **LightGlue**.
+3.  **Database Creation**: Imports intrinsics and matches into a COLMAP database (`database.db`).
+4.  **Geometric Verification**: Verifies matches to filter outliers (Crucial for GLOMAP).
+5.  **Reconstruction**: estimating camera poses and 3D points using **GLOMAP**.
+
+## data Preparation
+
+Your dataset should look like this:
+
+```
+/path/to/dataset/
+├── images/
+│   ├── frame_00001.png
+│   ├── frame_00002.png
+│   └── ...
+└── cameras.txt
+```
+
+### `cameras.txt`
+This file defines the camera intrinsics in standard COLMAP format. If provided, the pipeline will use it (Manual Mode).
+If missing, the pipeline will infer intrinsics automatically using the specified `--camera_model`.
+
+Example for a single PINHOLE camera (optional):
+```
+# Camera list with one line of data per camera:
+#   CAMERA_ID, MODEL, WIDTH, HEIGHT, PARAMS[]
+1 PINHOLE 1920 1080 1266.9 1267.62 960 540
+```
+
+## Usage
+
+Run the pipeline using `scripts/pipeline.py`:
+
+```bash
+python3 scripts/pipeline.py --dataset /path/to/dataset --output /path/to/output_folder --camera_model PINHOLE
+```
+
+### Arguments
+- `--dataset`: Path to the dataset root (containing `images/`).
+- `--output`: Directory where results will be saved.
+- `--camera_model`: Camera model for auto-intrinsics (e.g., `PINHOLE`, `SIMPLE_RADIAL`, `OPENCV`). Defaults to `SIMPLE_RADIAL`. Ignored if `cameras.txt` is present.
+- `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, or `all` (default).
+
+## Output
+
+The results will be saved in the `--output` directory:
+- `features.h5`: Extracted features.
+- `matches.h5`: Match data.
+- `pairs.txt`: List of image pairs.
+- `database.db`: SQLite database with all data.
+- **`sparse/0/`**: The final sparse reconstruction files:
+    - `cameras.bin`
+    - `images.bin`
+    - `points3D.bin`
+
+## Troubleshooting
+
+- **GLOMAP "0 pairs" error**: This usually means Geometric Verification failed or was skipped. The current script includes an explicit verification step to prevent this.
+- **Missing libraries**: The script tries to find `libcudss.so.0` in `/workspace/libcudss-linux-x86_64-0.3.0.9_cuda12-archive/lib`. If you move this library, update the path in `pipeline.py`.
