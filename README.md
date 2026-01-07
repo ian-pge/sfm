@@ -8,8 +8,8 @@ This pipeline automates the creation of a sparse 3D reconstruction from a set of
 ## Overview
 
 The pipeline performs the following steps:
-1.  **Feature Extraction**: Extracts keypoints using **ALIKED**.
-2.  **Matching**: Matches keypoints between image pairs using **LightGlue**.
+1.  **Feature Extraction**: Extracts keypoints using **ALIKED** (default), SuperPoint, DISK, or SIFT.
+2.  **Matching**: Matches keypoints between image pairs using **LightGlue** (or Adalam for SIFT). Supports Sequential, Exhaustive, or Retrieval-based matching strategies.
 3.  **Database Creation**: Imports intrinsics and matches into a COLMAP database (`database.db`).
 4.  **Geometric Verification**: Verifies matches to filter outliers (Crucial for GLOMAP).
 5.  **Reconstruction**: estimating camera poses and 3D points using **GLOMAP**.
@@ -45,14 +45,33 @@ Example for a single PINHOLE camera (optional):
 Run the pipeline using `scripts/pipeline.py`:
 
 ```bash
-python3 scripts/pipeline.py --dataset /path/to/dataset --output /path/to/output_folder --camera_model PINHOLE
+# Default sequential matching (good for video)
+python3 scripts/pipeline.py \
+    --dataset /path/to/dataset \
+    --output /path/to/output_folder \
+    --camera_model PINHOLE
+
+# Exhaustive matching (good for small, unordered datasets)
+python3 scripts/pipeline.py \
+    --dataset /path/to/dataset \
+    --matching_type exhaustive
+
+# Retrieval matching (good for large, unordered datasets)
+python3 scripts/pipeline.py \
+    --dataset /path/to/dataset \
+    --matching_type retrieval
 ```
 
 ### Arguments
 - `--dataset`: Path to the dataset root (containing `images/`).
 - `--output`: Directory where results will be saved.
 - `--camera_model`: Camera model for auto-intrinsics (e.g., `PINHOLE`, `SIMPLE_RADIAL`, `OPENCV`). Defaults to `SIMPLE_RADIAL`. Ignored if `cameras.txt` is present.
-- `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, or `all` (default).
+- `--matching_type`: Strategy for pairing images:
+  - `sequential` (default): Matches consecutive frames. Good for video.
+  - `exhaustive`: Matches every image with every other image. Good for small datasets.
+  - `retrieval`: Uses global descriptors (NetVLAD) to find overlapping pairs. Good for large datasets.
+- `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
+- `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
 
 ## Output
 
@@ -61,6 +80,7 @@ The results will be saved in the `--output` directory:
 - `matches.h5`: Match data.
 - `pairs.txt`: List of image pairs.
 - `database.db`: SQLite database with all data.
+- **`sparse.ply` / `sparse.glb`**: Exported point clouds for visualization.
 - **`sparse/0/`**: The final sparse reconstruction files:
     - `cameras.bin`
     - `images.bin`

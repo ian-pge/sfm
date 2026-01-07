@@ -16,7 +16,7 @@ if external_dir.exists():
     sys.path.append(str(external_dir))
 
 
-from hloc import extract_features, match_features, pairs_from_exhaustive, reconstruction
+from hloc import extract_features, match_features, pairs_from_exhaustive, pairs_from_retrieval, reconstruction
 
 
 # Configuration for different feature extractors and matchers
@@ -81,14 +81,29 @@ def generate_sequential_pairs(images_path, pairs_path, window_size=10):
             f.write(f"{p1} {p2}\n")
 
 
-def run_matching(output_path, feature_path, images_path, feature_type="aliked"):
+def run_matching(output_path, feature_path, images_path, feature_type="aliked", matching_type="sequential"):
     config = FEATURE_CONFIGS[feature_type]
     matcher_conf = match_features.confs[config["matcher"]]
     match_path = output_path / "matches.h5"
     pairs_path = output_path / "pairs.txt"
 
-    print(f"Generating sequential pairs to {pairs_path}...")
-    generate_sequential_pairs(images_path, pairs_path, window_size=10)
+    if matching_type == "sequential":
+        print(f"Generating sequential pairs to {pairs_path}...")
+        generate_sequential_pairs(images_path, pairs_path, window_size=10)
+    elif matching_type == "exhaustive":
+        print(f"Generating exhaustive pairs to {pairs_path}...")
+        pairs_from_exhaustive.main(pairs_path, features=feature_path)
+    elif matching_type == "retrieval":
+        print(f"Extracting global features for retrieval...")
+        global_conf = extract_features.confs["netvlad"]
+        global_features_path = output_path / "global_features.h5"
+        extract_features.main(global_conf, images_path, feature_path=global_features_path)
+        
+        print(f"Generating retrieval pairs to {pairs_path}...")
+        pairs_from_retrieval.main(global_features_path, pairs_path, num_matched=20)
+    else:
+        print(f"Unknown matching type: {matching_type}")
+        sys.exit(1)
 
     print(f"Matching features into {match_path} using {config['matcher']}...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -382,6 +397,12 @@ def main():
         default="aliked",
         help="Feature extractor usage (default: aliked). Use 'sift' for classic robust features, or 'superpoint'/'disk' for deep features.",
     )
+    parser.add_argument(
+        "--matching_type",
+        choices=["sequential", "exhaustive", "retrieval"],
+        default="sequential",
+        help="Matching strategy (default: sequential). Use 'exhaustive' for small datasets, 'retrieval' for large ones.",
+    )
 
     args = parser.parse_args()
 
@@ -412,7 +433,11 @@ def main():
             print("Features file not found. Run 'features' stage first.")
             sys.exit(1)
         match_path, pairs_path = run_matching(
-            output_path, feature_path, images_path, feature_type=args.feature_type
+            output_path,
+            feature_path,
+            images_path,
+            feature_type=args.feature_type,
+            matching_type=args.matching_type,
         )
 
     if args.stage in ["all", "mapping"]:
