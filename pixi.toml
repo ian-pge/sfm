@@ -9,8 +9,8 @@ version = "0.1.0"
 download-weights = "bash pixi_scripts/download_weights.sh"
 build-ceres = "bash pixi_scripts/build_ceres.sh"
 build-colmap = { cmd = "bash pixi_scripts/build_colmap.sh", depends-on = ["build-ceres"] }
-build-pycolmap = { cmd = "bash pixi_scripts/build_pycolmap.sh" }
-build-glomap = { cmd = "bash pixi_scripts/build_glomap.sh" }
+build-pycolmap = { cmd = "bash pixi_scripts/build_pycolmap.sh", depends-on = ["build-colmap"] }
+build-glomap = { cmd = "bash pixi_scripts/build_glomap.sh", depends-on = ["build-colmap"] }
 post-install = { depends-on = ["build-glomap", "build-pycolmap", "download-weights"] }
 
 [dependencies]
