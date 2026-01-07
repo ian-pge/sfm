@@ -60,6 +60,10 @@ python3 scripts/pipeline.py \
 python3 scripts/pipeline.py \
     --dataset /path/to/dataset \
     --matching_type retrieval
+# Hybrid matching (Sequential + Retrieval) -> BEST for Loop Closure
+python3 scripts/pipeline.py \
+    --dataset /path/to/dataset \
+    --matching_type hybrid
 ```
 
 ### Arguments
@@ -70,6 +74,7 @@ python3 scripts/pipeline.py \
   - `sequential` (default): Matches consecutive frames. Good for video.
   - `exhaustive`: Matches every image with every other image. Good for small datasets.
   - `retrieval`: Uses global descriptors (NetVLAD) to find overlapping pairs. Good for large datasets.
+  - `hybrid`: Combines `sequential` and `retrieval` matching. Best for video datasets where loop closure is needed.
 - `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
 - `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
 

@@ -101,6 +101,34 @@ def run_matching(output_path, feature_path, images_path, feature_type="aliked", 
         
         print(f"Generating retrieval pairs to {pairs_path}...")
         pairs_from_retrieval.main(global_features_path, pairs_path, num_matched=20)
+    elif matching_type == "hybrid":
+        print("Running hybrid matching (Sequential + Retrieval)...")
+        pairs_seq = output_path / "pairs_sequential.txt"
+        generate_sequential_pairs(images_path, pairs_seq, window_size=10)
+        
+        print("Generating retrieval pairs...")
+        global_conf = extract_features.confs["netvlad"]
+        global_features_path = output_path / "global_features.h5"
+        extract_features.main(global_conf, images_path, feature_path=global_features_path)
+        
+        pairs_ret = output_path / "pairs_retrieval.txt"
+        pairs_from_retrieval.main(global_features_path, pairs_ret, num_matched=20)
+        
+        # Merge pairs
+        pairs = set()
+        for p in [pairs_seq, pairs_ret]:
+            with open(p, "r") as f:
+                for line in f:
+                    p1, p2 = line.strip().split()
+                    # ensure consistent ordering for deduplication
+                    if p1 > p2:
+                        p1, p2 = p2, p1
+                    pairs.add((p1, p2))
+                    
+        print(f"Merged {len(pairs)} unique pairs from Sequential and Retrieval.")
+        with open(pairs_path, "w") as f:
+            for p1, p2 in sorted(pairs):
+                f.write(f"{p1} {p2}\n")
     else:
         print(f"Unknown matching type: {matching_type}")
         sys.exit(1)
@@ -399,7 +427,7 @@ def main():
     )
     parser.add_argument(
         "--matching_type",
-        choices=["sequential", "exhaustive", "retrieval"],
+        choices=["sequential", "exhaustive", "retrieval", "hybrid"],
         default="sequential",
         help="Matching strategy (default: sequential). Use 'exhaustive' for small datasets, 'retrieval' for large ones.",
     )
