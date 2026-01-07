@@ -39,14 +39,7 @@ huggingface_hub = ">=0.19"
 pytorch = { version = ">=2.1.0", channel = "pytorch" }
 torchvision = { version = ">=0.16.0", channel = "pytorch" }
 pytorch-cuda = { version = "12.1", channel = "pytorch" }
-# Force nvidia channel for cuda libs to satisfy pytorch-cuda's internal deps
-cuda-libraries = { version = "12.1.*", channel = "nvidia" }
-libcublas = { version = "*", channel = "nvidia" }
-libcufft = { version = "*", channel = "nvidia" }
-libcusolver = { version = "*", channel = "nvidia" }
-libcusparse = { version = "*", channel = "nvidia" }
-libnvjpeg = { version = "*", channel = "nvidia" }
-libnpp = { version = "*", channel = "nvidia" }
+
 libgl-devel = ">=1.7.0,<2"
 libglu = ">=9.0.3,<10"
 cgal = ">=5.6.1,<6"
