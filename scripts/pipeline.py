@@ -487,8 +487,7 @@ def main():
         sparse_output = output_path / "sparse"
         export_reconstruction(sparse_output, output_path)
 
-        sparse_output = output_path / "sparse"
-        export_reconstruction(sparse_output, output_path)
+
 
 
 if __name__ == "__main__":
