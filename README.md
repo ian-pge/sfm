@@ -1,6 +1,6 @@
 # Reconstruction Pipeline: HLOC + GLOMAP
 
-This pipeline automates the creation of a sparse 3D reconstruction from a set of images using modern deep learning features (ALIKED + LightGlue) and a global structure-from-motion mapper (GLOMAP).
+This pipeline automates the creation of a sparse 3D reconstruction from a set of images using modern deep learning features (ALIKED + LightGlue by default) and a global structure-from-motion mapper (GLOMAP).
 
 > **Note**: This pipeline uses everything compiled from source with CUDA support for optimal performance.
 
