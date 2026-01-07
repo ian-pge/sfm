@@ -30,7 +30,8 @@ cuda-nvcc = "12.1.*"
 cuda-version = "12.1"
 # colmap = ">=3.9"  <-- Removing to build from source
 ceres-solver = ">=2.1"
- # libcudss = "*"
+libcudss = { version = "*", channel = "conda-forge" }
+libcudss-dev = { version = "*", channel = "conda-forge" }
 eigen = ">=3.4"
 boost = "*"
 glog = ">=0.6"

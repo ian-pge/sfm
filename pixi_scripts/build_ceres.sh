@@ -10,13 +10,13 @@ fi
 
 if [ ! -d "ceres-solver" ]; then
     git clone https://github.com/ceres-solver/ceres-solver.git
-    cd ceres-solver
-    # Checkout specific version? 2.2.0 tag is stable.
-    git checkout 2.2.0
-    cd ..
-else
-    echo "ceres-solver directory exists, using it."
 fi
+
+cd ceres-solver
+echo "Switching to master branch..."
+git checkout master
+git pull origin master
+cd ..
 
 cd ceres-solver
 
