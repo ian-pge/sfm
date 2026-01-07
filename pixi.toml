@@ -38,7 +38,7 @@ pyopengl = ">=3.1"
 huggingface_hub = ">=0.19"
 pytorch = { version = ">=2.1.0", channel = "pytorch" }
 torchvision = { version = ">=0.16.0", channel = "pytorch" }
-# pytorch-cuda = { version = "12.1", channel = "pytorch" } # Let pytorch dependency resolve this
+pytorch-cuda = { version = "12.1", channel = "pytorch" }
 # Force nvidia channel for cuda libs to satisfy pytorch-cuda's internal deps
 cuda-libraries = { version = "12.1.*", channel = "nvidia" }
 libcublas = { version = "*", channel = "nvidia" }

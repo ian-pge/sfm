@@ -380,7 +380,10 @@ def main():
     if torch.cuda.is_available():
         print(f"✅ GPU Detected: {torch.cuda.get_device_name(0)}")
     else:
-        print("⚠️  Warning: No GPU detected. The pipeline may run very slowly or fail.")
+        print("❌ Error: No GPU detected! This pipeline requires a GPU.")
+        print("   Please ensure you have installed CUDA-enabled PyTorch.")
+        print("   Try running: pixi install")
+        sys.exit(1)
 
     dataset_path, images_path, cameras_path, output_path = setup_paths(args)
 
