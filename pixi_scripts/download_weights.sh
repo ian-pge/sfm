@@ -2,7 +2,7 @@
 set -e
 
 # Define cache directory matching the python code expectations or standard torch cache
-CACHE_DIR="/home/zed/.cache/torch/hub/checkpoints"
+CACHE_DIR="$HOME/.cache/torch/hub/checkpoints"
 mkdir -p "$CACHE_DIR"
 
 echo "Downloading weights to $CACHE_DIR..."

@@ -13,6 +13,8 @@ The pipeline performs the following steps:
 
 ## data Preparation
 
+**Important**: Ensure your images are properly ordered (e.g., sequential frame numbers). The pipeline relies on correct image ordering for accurate matching and reconstruction.
+
 Your dataset should look like this:
 
 ```
@@ -60,8 +62,3 @@ The results will be saved in the `--output` directory:
     - `cameras.bin`
     - `images.bin`
     - `points3D.bin`
-
-## Troubleshooting
-
-- **GLOMAP "0 pairs" error**: This usually means Geometric Verification failed or was skipped. The current script includes an explicit verification step to prevent this.
-- **Missing libraries**: The script tries to find `libcudss.so.0` in `/workspace/libcudss-linux-x86_64-0.3.0.9_cuda12-archive/lib`. If you move this library, update the path in `pipeline.py`.
