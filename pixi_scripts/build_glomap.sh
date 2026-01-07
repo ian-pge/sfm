@@ -19,6 +19,19 @@ else
     cd glomap && git pull && cd ..
 fi
 
+echo "Applying patches for system COLMAP linkage..."
+# Patch 1: Make COLMAP visible globally in FindDependencies.cmake
+if ! grep -q "find_package(colmap REQUIRED)" glomap/cmake/FindDependencies.cmake; then
+    sed -i '/find_package(OpenMP REQUIRED COMPONENTS C CXX)/a \
+\
+if(NOT FETCH_COLMAP)\
+    find_package(colmap REQUIRED)\
+endif()' glomap/cmake/FindDependencies.cmake
+fi
+
+# Patch 2: Prevent duplicate finding in thirdparty/CMakeLists.txt
+sed -i 's/find_package(COLMAP REQUIRED)/if(NOT TARGET colmap::colmap)\n    find_package(COLMAP REQUIRED)\nendif()/' glomap/thirdparty/CMakeLists.txt
+
 cd glomap
 
 # Clean build
@@ -35,7 +48,8 @@ cmake .. -GNinja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CUDA_ARCHITECTURES="native" \
     -DCMAKE_CUDA_COMPILER="$(which nvcc)" \
-    -DCMAKE_CUDA_FLAGS="-allow-unsupported-compiler"
+    -DCMAKE_CUDA_FLAGS="-allow-unsupported-compiler" \
+    -DFETCH_COLMAP=OFF
 
 # Build and Install
 ninja

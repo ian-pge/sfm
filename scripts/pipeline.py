@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import open3d as o3d
 import trimesh
 import torch
 
@@ -249,15 +248,19 @@ def export_reconstruction(sparse_path, output_path):
         print("Warning: No points in reconstruction to export.")
         return
 
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(np.array(points))
-    pcd.colors = o3d.utility.Vector3dVector(np.array(colors))
+    # pcd = o3d.geometry.PointCloud()
+    # pcd.points = o3d.utility.Vector3dVector(np.array(points))
+    # pcd.colors = o3d.utility.Vector3dVector(np.array(colors))
 
     ply_path = output_path / "sparse.ply"
     glb_path = output_path / "sparse.glb"
 
     print(f"Saving {ply_path}...")
-    o3d.io.write_point_cloud(str(ply_path), pcd)
+    # o3d.io.write_point_cloud(str(ply_path), pcd)
+    
+    # Use Trimesh for PLY export instead
+    pcd_trimesh = trimesh.PointCloud(vertices=points, colors=(np.array(colors) * 255).astype(np.uint8))
+    pcd_trimesh.export(str(ply_path))
 
     print(f"Saving {glb_path}...")
     try:

@@ -7,33 +7,40 @@ version = "0.1.0"
 
 [tasks]
 download-weights = "bash pixi_scripts/download_weights.sh"
-build-glomap = "bash pixi_scripts/build_glomap.sh"
-post-install = { depends-on = ["build-glomap", "download-weights"] }
+build-ceres = "bash pixi_scripts/build_ceres.sh"
+build-colmap = { cmd = "bash pixi_scripts/build_colmap.sh", depends-on = ["build-ceres"] }
+build-pycolmap = { cmd = "bash pixi_scripts/build_pycolmap.sh" }
+build-glomap = { cmd = "bash pixi_scripts/build_glomap.sh" }
+post-install = { depends-on = ["build-glomap", "build-pycolmap", "download-weights"] }
 
 [dependencies]
 python = "3.10.*"
+pip = "*"
+scikit-build-core = "*"
+clang-format = "*"
 cmake = ">=3.28"
 ninja = ">=1.11"
 make = ">=4.3"
+git = ">=2.52.0,<3"
+pybind11 = ">=3.0.1,<4"
 cxx-compiler = ">=1.5"
 gxx_linux-64 = "12.*"
 gcc_linux-64 = "12.*"
 cuda-nvcc = "12.1.*"
 cuda-version = "12.1"
-colmap = ">=3.9"
+# colmap = ">=3.9"  <-- Removing to build from source
 ceres-solver = ">=2.1"
+ # libcudss = "*"
 eigen = ">=3.4"
-boost = ">=1.82"
+boost = "*"
 glog = ">=0.6"
 gflags = ">=2.2"
 suitesparse = ">=5.10"
-opencv = ">=4.8"
 ffmpeg = ">=6.0"
 numpy = "<2.0"
 h5py = ">=3.8"
 trimesh = ">=4.0"
 # pycolmap moved to pypi
-open3d = ">=0.18"
 pillow = ">=10.0"
 requests = ">=2.31"
 pyopengl = ">=3.1"
@@ -49,7 +56,14 @@ libcurand-dev = ">=10.3.2.106,<11"
 cuda-cudart-dev = "12.1.*"
 cuda-cudart-static = "12.1.*"
 libcublas-dev = "12.1.*"
+libcusolver-dev = "*"
+libcusparse-dev = "*"
+openimageio = "*"
+glew = "*"
+freeimage = "*"
 libjpeg-turbo = { version = "*", channel = "conda-forge" }
+setuptools = ">=80.9.0,<81"
+wheel = ">=0.45.1,<0.46"
 
 [pypi-dependencies]
 dual-quaternions = ">=0.4.0, <0.5"
@@ -58,4 +72,4 @@ piexif = ">=1.1.3, <2"
 pillow-heif = ">=1.1.1, <2"
 hloc = { git = "https://github.com/cvg/Hierarchical-Localization.git" }
 lightglue = { git = "https://github.com/cvg/LightGlue.git" }
-pycolmap = ">=0.6"
+# pycolmap = ">=0.6"
