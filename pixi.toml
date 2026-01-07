@@ -1,6 +1,6 @@
 [workspace]
 authors = ["ian <ian.page38@gmail.com>"]
-channels = ["nvidia", "pytorch", "conda-forge"]
+channels = ["nvidia", "conda-forge", "pytorch"]
 name = "workspace"
 platforms = ["linux-64"]
 version = "0.1.0"
@@ -16,6 +16,8 @@ cmake = ">=3.28"
 ninja = ">=1.11"
 make = ">=4.3"
 cxx-compiler = ">=1.5"
+gxx_linux-64 = "12.*"
+gcc_linux-64 = "12.*"
 cuda-nvcc = "12.1.*"
 cuda-version = "12.1"
 colmap = ">=3.9"
@@ -44,6 +46,10 @@ libgl-devel = ">=1.7.0,<2"
 libglu = ">=9.0.3,<10"
 cgal = ">=5.6.1,<6"
 libcurand-dev = ">=10.3.2.106,<11"
+cuda-cudart-dev = "12.1.*"
+cuda-cudart-static = "12.1.*"
+libcublas-dev = "12.1.*"
+libjpeg-turbo = { version = "*", channel = "conda-forge" }
 
 [pypi-dependencies]
 dual-quaternions = ">=0.4.0, <0.5"

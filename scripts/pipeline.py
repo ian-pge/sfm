@@ -61,6 +61,9 @@ def run_feature_extraction(images_path, output_path, feature_type="aliked"):
     feature_path = output_path / "features.h5"
 
     print(f"Extracting features to {feature_path} using {feature_type}...")
+    # HLOC uses auto-detection. Verifying device.
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Feature Extraction Device: {device}")
     extract_features.main(feature_conf, images_path, feature_path=feature_path)
     return feature_path
 
@@ -89,6 +92,8 @@ def run_matching(output_path, feature_path, images_path, feature_type="aliked"):
     generate_sequential_pairs(images_path, pairs_path, window_size=10)
 
     print(f"Matching features into {match_path} using {config['matcher']}...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Matching Device: {device}")
     match_features.main(
         matcher_conf, pairs_path, features=feature_path, matches=match_path
     )

@@ -34,7 +34,8 @@ cmake .. -GNinja \
     -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CUDA_ARCHITECTURES="native" \
-    -DCMAKE_CUDA_COMPILER="$(which nvcc)"
+    -DCMAKE_CUDA_COMPILER="$(which nvcc)" \
+    -DCMAKE_CUDA_FLAGS="-allow-unsupported-compiler"
 
 # Build and Install
 ninja
