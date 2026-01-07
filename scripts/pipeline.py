@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import open3d as o3d
 import trimesh
+import torch
 
 # Add external scripts to path for SuperGluePretrainedNetwork (just in case, though ALIKED doesn't use it)
 current_dir = Path(__file__).parent
@@ -375,6 +376,11 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if torch.cuda.is_available():
+        print(f"✅ GPU Detected: {torch.cuda.get_device_name(0)}")
+    else:
+        print("⚠️  Warning: No GPU detected. The pipeline may run very slowly or fail.")
 
     dataset_path, images_path, cameras_path, output_path = setup_paths(args)
 

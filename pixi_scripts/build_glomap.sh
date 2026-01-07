@@ -33,7 +33,7 @@ cmake .. -GNinja \
     -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
     -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_CUDA_ARCHITECTURES="89" \
+    -DCMAKE_CUDA_ARCHITECTURES="native" \
     -DCMAKE_CUDA_COMPILER="$(which nvcc)"
 
 # Build and Install
