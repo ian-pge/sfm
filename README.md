@@ -14,6 +14,13 @@ The pipeline performs the following steps:
 4.  **Geometric Verification**: Verifies matches to filter outliers (Crucial for GLOMAP).
 5.  **Reconstruction**: estimating camera poses and 3D points using **GLOMAP** (Global) or **COLMAP** (Incremental).
 
+## Installation
+
+```bash
+cd sfm 
+pixi install 
+```
+
 ## data Preparation
 
 **Important**: Ensure your images are properly ordered (e.g., sequential frame numbers). The pipeline relies on correct image ordering for accurate matching and reconstruction.
@@ -45,33 +52,14 @@ Example for a single PINHOLE camera (optional):
 Run the pipeline using `scripts/pipeline.py`:
 
 ```bash
-# Default sequential matching (good for video)
-python3 scripts/pipeline.py \
-    --dataset /path/to/dataset \
-    --output /path/to/output_folder \
-    --camera_model PINHOLE
-
-# Exhaustive matching (good for small, unordered datasets)
-python3 scripts/pipeline.py \
-    --dataset /path/to/dataset \
-    --matching_type exhaustive
-
-# Retrieval matching (good for large, unordered datasets)
-python3 scripts/pipeline.py \
-    --dataset /path/to/dataset \
-    --matching_type retrieval
-# Hybrid matching (Sequential + Retrieval) -> BEST for Loop Closure
-python3 scripts/pipeline.py \
-    --dataset /path/to/dataset \
-    --matching_type hybrid
-
-# Use COLMAP instead of GLOMAP (default)
-python3 scripts/pipeline.py \
-    --dataset /path/to/dataset \
-    --mapper colmap
+pixi run sfm
 ```
 
 ### Arguments
+
+example
+pixi run sfm -- --dataset /path/to/dataset --output /path/to/output --camera_model SIMPLE_RADIAL --mapper glomap
+
 - `--dataset`: Path to the dataset root (containing `images/`).
 - `--output`: Directory where results will be saved.
 - `--camera_model`: Camera model for auto-intrinsics (e.g., `PINHOLE`, `SIMPLE_RADIAL`, `OPENCV`). Defaults to `SIMPLE_RADIAL`. Ignored if `cameras.txt` is present.
