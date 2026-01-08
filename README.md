@@ -20,6 +20,7 @@ Use ubuntu 22.04
 ```bash
 cd sfm 
 pixi install 
+pixi run post-install
 ```
 
 ## data Preparation
