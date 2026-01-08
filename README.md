@@ -15,6 +15,7 @@ The pipeline performs the following steps:
 5.  **Reconstruction**: estimating camera poses and 3D points using **GLOMAP** (Global) or **COLMAP** (Incremental).
 
 ## Installation
+Use ubuntu 22.04
 
 ```bash
 cd sfm 
