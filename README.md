@@ -59,7 +59,7 @@ pixi run sfm
 
 example
 ```bash
-pixi run sfm -- --dataset /path/to/dataset --output /path/to/output --camera_model SIMPLE_RADIAL --mapper glomap
+pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model SIMPLE_RADIAL --mapper glomap
 ```
 
 - `--dataset`: Path to the dataset root (containing `images/`).
