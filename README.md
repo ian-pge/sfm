@@ -4,6 +4,7 @@ This pipeline automates the creation of a sparse 3D reconstruction from a set of
 
 > **Note**: This pipeline uses everything compiled from source with CUDA support for optimal performance.
 
+![Alt Text](./shema.png)
 
 ## Overview
 
