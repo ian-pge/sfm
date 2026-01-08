@@ -3,10 +3,9 @@
 This pipeline automates the creation of a sparse 3D reconstruction from a set of images using modern deep learning features (ALIKED + LightGlue by default) and a global (GLOMAP) or incremental (COLMAP) structure-from-motion mapper.
 
 > **Note**: This pipeline uses everything compiled from source with CUDA support for optimal performance.
-
-![Alt Text](./shema.png)
-
+> 
 ## Overview
+![Alt Text](./shema.png)
 
 The pipeline performs the following steps:
 1.  **Feature Extraction**: Extracts keypoints using **ALIKED** (default), SuperPoint, DISK, or SIFT.
