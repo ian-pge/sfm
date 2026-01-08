@@ -331,11 +331,44 @@ def export_reconstruction(sparse_path, output_path):
         # Add Cameras
         # We need to compute frustums.
         # Size of frustum? Let's infer proper scale from the scene extent.
-        if points:
+        # Adaptive Camera Sizing
+        # Compute camera centers to find average nearest neighbor distance
+        cam_centers = []
+        for image in recon.images.values():
+            cam_from_world = image.cam_from_world()
+            R = cam_from_world.rotation.matrix()
+            t = cam_from_world.translation
+            center = -R.T @ t
+            cam_centers.append(center)
+        
+        cam_centers = np.array(cam_centers)
+        
+        if len(cam_centers) > 1:
+            # Compute distances to nearest neighbor for each camera
+            # Using simple broadcasting (N is typically < few thousands, so N^2 is fine)
+            # For extremely large datasets, a k-d tree would be better, but we stick to numpy deps
+            d1 = cam_centers[:, None, :]
+            d2 = cam_centers[None, :, :]
+            dists = np.linalg.norm(d1 - d2, axis=-1)
+            
+            # Set diagonal to infinity to ignore self-distance
+            np.fill_diagonal(dists, np.inf)
+            
+            # Find distance to nearest neighbor for each camera
+            min_dists = np.min(dists, axis=1)
+            
+            # Use the median of these nearest distances as a robust scale base
+            # We scale it slightly (e.g., 0.5) so frustums don't touch/overlap too much
+            median_nn_dist = np.median(min_dists)
+            cam_scale = median_nn_dist * 1.5
+            print(f"Adaptive camera scale: {cam_scale:.4f} (based on median neighbor dist: {median_nn_dist:.4f})")
+            
+        elif points:
+             # Fallback if only 1 camera
             bbox_min = np.min(points, axis=0)
             bbox_max = np.max(points, axis=0)
             scene_scale = np.linalg.norm(bbox_max - bbox_min)
-            cam_scale = scene_scale * 0.005  # 0.5% of scene size
+            cam_scale = scene_scale * 0.005  # Fallback to 0.5%
         else:
             cam_scale = 1.0
 
