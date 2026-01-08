@@ -4,9 +4,11 @@ import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+import colorsys
 
 import numpy as np
 import trimesh
+import trimesh.path.entities
 import torch
 
 # Add external scripts to path for SuperGluePretrainedNetwork (just in case, though ALIKED doesn't use it)
@@ -333,72 +335,74 @@ def export_reconstruction(sparse_path, output_path):
             bbox_min = np.min(points, axis=0)
             bbox_max = np.max(points, axis=0)
             scene_scale = np.linalg.norm(bbox_max - bbox_min)
-            cam_scale = scene_scale * 0.05  # 5% of scene size
+            cam_scale = scene_scale * 0.005  # 0.5% of scene size
         else:
             cam_scale = 1.0
 
         frustum_lines = []
+        line_colors = []
 
-        # Canonical frustum in camera frame (looking down +Z or -Z? COLMAP is +Z usually, wait.
-        # COLMAP: Camera local frame: +X right, +Y down, +Z forward.
-        # But we verify this via the rotation.
-        # Let's simple create a pyramid: origin (0,0,0) -> 4 corners at Z=1 (scaled)
-
-        # Corners at distance 1
-        w, h = (
-            1.0,
-            0.75,
-        )  # aspect ratio guess, or use actual if we had per-camera dims easily accessible here
-        # We could look up camera_id from image and get dims, but for visualization generic is fine.
-
-        corners = (
-            np.array([[0, 0, 0], [-w, -h, 1], [w, -h, 1], [w, h, 1], [-w, h, 1]])
-            * cam_scale
+        # Canonical frustum in camera frame
+        w, h = (1.0, 0.75)
+        # 5 vertices: Origin, and 4 corners at Z=1*scale
+        raw_corners = (
+             np.array([[0, 0, 0], [-w, -h, 1], [w, -h, 1], [w, h, 1], [-w, h, 1]])
+             * cam_scale
         )
 
-        # Edges: 0-1, 0-2, 0-3, 0-4, 1-2, 2-3, 3-4, 4-1
-        edges = [[0, 1], [0, 2], [0, 3], [0, 4], [1, 2], [2, 3], [3, 4], [4, 1]]
+        all_vertices = []
+        all_entities = []
+        all_colors = []
 
-        for image in recon.images.values():
-            # Image pose is World-to-Camera (R, t)
-            # Accessed via cam_from_world in newer pycolmap
+        # Continuous path to draw pyramid: Base loop + edges to apex
+        # 1-2-3-4-1 (base), then 1-0-2-0-3-0-4 (edges to apex with backtracking)
+        # Indices relative to the 5 vertices of the camera
+        camera_indices = [1, 2, 3, 4, 1, 0, 2, 0, 3, 0, 4]
 
+        # Sort images by ID to ensure smooth gradient
+        sorted_images = sorted(recon.images.values(), key=lambda x: x.image_id)
+        num_images = len(sorted_images)
+
+        for i, image in enumerate(sorted_images):
             cam_from_world = image.cam_from_world()
             R = cam_from_world.rotation.matrix()
             t = cam_from_world.translation
 
-            # C = -R^T * t
-            # R_inv = R^T
             R_wc = R.T
             t_wc = -R_wc @ t
 
-            # Transform frustum to world
-            # Point_world = R_wc * Point_cam + t_wc
-            transformed_corners = (R_wc @ corners.T).T + t_wc
+            # Transform 5 vertices to world
+            transformed_vertices = (R_wc @ raw_corners.T).T + t_wc
 
-            # Create lines for this camera
-            # We can't batch these easily into one lineset unless we merge valid vertices.
-            # Trimesh Path3D can handle disjoint lines.
+            # Append to master list
+            start_idx = len(all_vertices)
+            all_vertices.extend(transformed_vertices)
 
-            # Create a list of line segments
-            for start, end in edges:
-                frustum_lines.append(
-                    [transformed_corners[start], transformed_corners[end]]
-                )
+            # Create entity
+            entity_indices = [idx + start_idx for idx in camera_indices]
+            all_entities.append(trimesh.path.entities.Line(points=entity_indices))
+            
+            # Create color gradient (Rainbow/HSV)
+            # Map index to hue 0.0-0.7 (Red to Blue, skipping purple/magenta to keeping it distinct from start)
+            # Or full loop 0.0-1.0
+            hue = i / (num_images - 1) if num_images > 1 else 0.0
+            rgb = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+            color = np.array([int(c * 255) for c in rgb] + [255], dtype=np.uint8)
+            all_colors.append(color)
 
-        if frustum_lines:
-            # Create a Path3D or just flatten lines for a specialized GL lineset?
-            # Trimesh load_path with 'entities' is complex.
-            # Easiest: Create a Path3D from all segments.
-            # Or simply trimesh.load_path(np.array(frustum_lines))
-
-            # Note: trimesh.load_path requires (n, 2, 3) for separate lines?
-            # Let's try creating a Path3D directly.
-            camera_vis = trimesh.load_path(np.array(frustum_lines))
-            camera_vis.colors = np.array(
-                [[255, 0, 0, 255]] * len(camera_vis.entities)
-            )  # Red
+        if all_vertices:
+            camera_vis = trimesh.path.Path3D(
+                vertices=np.array(all_vertices),
+                entities=all_entities
+            )
+            camera_vis.colors = np.array(all_colors)
             scene.add_geometry(camera_vis)
+
+        # Fix orientation: Rotate 180 degrees around X-axis
+        # GLTF typically uses +Y up, -Z forward. COLMAP/OpenCV +Y down.
+        # Flipping Y and Z (180 deg around X) standardizes this view.
+        rotation_matrix = trimesh.transformations.rotation_matrix(np.pi, [1, 0, 0])
+        scene.apply_transform(rotation_matrix)
 
         scene.export(str(glb_path))
     except Exception as e:
