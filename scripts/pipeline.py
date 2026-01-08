@@ -197,8 +197,11 @@ def run_mapping(
     match_path,
     pairs_path,
     camera_model="SIMPLE_RADIAL",
+    mapper="glomap",
 ):
     database_path = output_path / "database.db"
+    sparse_output = output_path / "sparse"
+    sparse_output.mkdir(exist_ok=True)
 
     if database_path.exists():
         database_path.unlink()
@@ -236,22 +239,27 @@ def run_mapping(
     print("Running geometric verification...")
     reconstruction.estimation_and_geometric_verification(database_path, pairs_path)
 
-    sparse_output = output_path / "sparse"
-    sparse_output.mkdir(exist_ok=True)
-
-    print("Running GLOMAP mapper...")
-
-    cmd = [
-        "glomap",
-        "mapper",
-        "--database_path",
-        str(database_path),
-        "--image_path",
-        str(images_path),
-        "--output_path",
-        str(sparse_output),
-    ]
-    subprocess.run(cmd, check=True)
+    if mapper == "glomap":
+        print("Running GLOMAP mapper...")
+        cmd = [
+            "glomap",
+            "mapper",
+            "--database_path",
+            str(database_path),
+            "--image_path",
+            str(images_path),
+            "--output_path",
+            str(sparse_output),
+        ]
+        subprocess.run(cmd, check=True)
+    elif mapper == "colmap":
+        print("Running COLMAP mapper...")
+        reconstruction.pycolmap.incremental_mapping(
+            database_path, images_path, sparse_output
+        )
+    else:
+        print(f"Unknown mapper: {mapper}")
+        sys.exit(1)
 
     return sparse_output
 
@@ -431,6 +439,12 @@ def main():
         default="sequential",
         help="Matching strategy (default: sequential). Use 'exhaustive' for small datasets, 'retrieval' for large ones.",
     )
+    parser.add_argument(
+        "--mapper",
+        choices=["glomap", "colmap"],
+        default="glomap",
+        help="Mapper usage (default: glomap)",
+    )
 
     args = parser.parse_args()
 
@@ -481,6 +495,7 @@ def main():
             match_path,
             pairs_path,
             camera_model=args.camera_model,
+            mapper=args.mapper,
         )
 
     if args.stage in ["all", "export"]:

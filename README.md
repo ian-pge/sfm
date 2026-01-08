@@ -1,6 +1,6 @@
-# Reconstruction Pipeline: HLOC + GLOMAP
+# Reconstruction Pipeline: HLOC + GLOMAP / COLMAP
 
-This pipeline automates the creation of a sparse 3D reconstruction from a set of images using modern deep learning features (ALIKED + LightGlue by default) and a global structure-from-motion mapper (GLOMAP).
+This pipeline automates the creation of a sparse 3D reconstruction from a set of images using modern deep learning features (ALIKED + LightGlue by default) and a global (GLOMAP) or incremental (COLMAP) structure-from-motion mapper.
 
 > **Note**: This pipeline uses everything compiled from source with CUDA support for optimal performance.
 
@@ -12,7 +12,7 @@ The pipeline performs the following steps:
 2.  **Matching**: Matches keypoints between image pairs using **LightGlue** (or Adalam for SIFT). Supports Sequential, Exhaustive, or Retrieval-based matching strategies.
 3.  **Database Creation**: Imports intrinsics and matches into a COLMAP database (`database.db`).
 4.  **Geometric Verification**: Verifies matches to filter outliers (Crucial for GLOMAP).
-5.  **Reconstruction**: estimating camera poses and 3D points using **GLOMAP**.
+5.  **Reconstruction**: estimating camera poses and 3D points using **GLOMAP** (Global) or **COLMAP** (Incremental).
 
 ## data Preparation
 
@@ -64,6 +64,11 @@ python3 scripts/pipeline.py \
 python3 scripts/pipeline.py \
     --dataset /path/to/dataset \
     --matching_type hybrid
+
+# Use COLMAP instead of GLOMAP (default)
+python3 scripts/pipeline.py \
+    --dataset /path/to/dataset \
+    --mapper colmap
 ```
 
 ### Arguments
@@ -76,6 +81,7 @@ python3 scripts/pipeline.py \
   - `retrieval`: Uses global descriptors (NetVLAD) to find overlapping pairs. Good for large datasets.
   - `hybrid`: Combines `sequential` and `retrieval` matching. Best for video datasets where loop closure is needed.
 - `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
+- `--mapper`: Reconstruction mapper to use: `glomap` (default, global SfM) or `colmap` (incremental SfM).
 - `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
 
 ## Output
