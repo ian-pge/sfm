@@ -18,6 +18,7 @@ The pipeline performs the following steps:
 Use ubuntu 22.04
 
 ```bash
+curl -fsSL https://pixi.sh/install.sh sh
 cd sfm 
 pixi install 
 pixi run post-install
