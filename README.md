@@ -75,7 +75,19 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
   - `hybrid`: Combines `sequential` and `retrieval` matching. Best for video datasets where loop closure is needed.
 - `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
 - `--mapper`: Reconstruction mapper to use: `glomap` (default, global SfM) or `colmap` (incremental SfM).
+- `--undistort`: (Optional) Undistort images after reconstruction. Crucial for Gaussian Splatting.
 - `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
+
+### Gaussian Splatting Workflow
+
+To prepare data for Gaussian Splatting (which requires **Pinhole** images), use the `--undistort` flag.
+**Note**: Do NOT use `--camera_model PINHOLE` blindly on distorted images. Let the pipeline learn the distortion (e.g. `SIMPLE_RADIAL`) and then undistort.
+
+```bash
+pixi run sfm --dataset /path/to/distorted_dataset --undistort --camera_model SIMPLE_RADIAL
+```
+
+This will produce a `undistorted/` folder ready for training.
 
 ## Output
 
@@ -85,7 +97,7 @@ The results will be saved in the `--output` directory:
 - `pairs.txt`: List of image pairs.
 - `database.db`: SQLite database with all data.
 - **`sparse.ply` / `sparse.glb`**: Exported point clouds for visualization.
-- **`sparse/0/`**: The final sparse reconstruction files:
-    - `cameras.bin`
-    - `images.bin`
-    - `points3D.bin`
+- **`sparse/`**: The final sparse reconstruction files.
+- **`undistorted/`** (if `--undistort` is used):
+    - `images/`: Undistorted pinhole images.
+    - `sparse/0/`: Corresponding sparse model (compatible with standard Splatting loaders).

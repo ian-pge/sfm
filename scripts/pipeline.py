@@ -3,6 +3,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 import colorsys
 
@@ -266,6 +267,63 @@ def run_mapping(
     return sparse_output
 
 
+def run_undistortion(sparse_path, images_path, output_path):
+    print("Running image undistortion (COLMAP)...")
+    
+    # Define undistortion output path
+    undistorted_output = output_path / "undistorted"
+    undistorted_output.mkdir(exist_ok=True, parents=True)
+    
+    # We need to find the correct sparse model path (same logic as export)
+    model_path = sparse_path
+    if (
+        not (model_path / "cameras.bin").exists()
+        and not (model_path / "cameras.txt").exists()
+        and (model_path / "0").exists()
+    ):
+        model_path = model_path / "0"
+
+    print(f"Using model from: {model_path}")
+
+    cmd = [
+        "colmap",
+        "image_undistorter",
+        "--image_path",
+        str(images_path),
+        "--input_path",
+        str(model_path),
+        "--output_path",
+        str(undistorted_output),
+        "--output_type",
+        "COLMAP",
+        "--max_image_size",
+        "2000",
+    ]
+    
+    try:
+        subprocess.run(cmd, check=True)
+        print(f"Undistorted images saved to {undistorted_output / 'images'}")
+        
+        # Gaussian Splatting loaders typically expect the model in 'sparse/0'
+        # COLMAP image_undistorter saves directly to 'sparse'.
+        # We'll move it to 'sparse/0' for maximum compatibility.
+        sparse_dir = undistorted_output / "sparse"
+        sparse_0_dir = sparse_dir / "0"
+        
+        if sparse_dir.exists() and not sparse_0_dir.exists():
+            print("Organizing output for Gaussian Splatting (moving sparse -> sparse/0)...")
+            sparse_0_dir.mkdir(parents=True)
+            for item in sparse_dir.iterdir():
+                if item.name == "0": continue
+                # Move files/dirs into 0/
+                shutil.move(str(item), str(sparse_0_dir / item.name))
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error running image undistortion: {e}")
+        # Don't exit, just print error as this is post-processing
+
+
+
 def export_reconstruction(sparse_path, output_path):
     print(f"Exporting reconstruction from {sparse_path} to {output_path}...")
 
@@ -482,6 +540,11 @@ def main():
         default="glomap",
         help="Mapper usage (default: glomap)",
     )
+    parser.add_argument(
+        "--undistort",
+        action="store_true",
+        help="Undistort images after reconstruction (outputs to output/undistorted)",
+    )
 
     args = parser.parse_args()
 
@@ -523,7 +586,7 @@ def main():
         if not match_path.exists():
             print("Matches file not found. Run 'matching' stage first.")
             sys.exit(1)
-        run_mapping(
+        sparse_output = run_mapping(
             output_path,
             dataset_path,
             images_path,
@@ -534,6 +597,9 @@ def main():
             camera_model=args.camera_model,
             mapper=args.mapper,
         )
+
+        if args.undistort:
+            run_undistortion(sparse_output, images_path, output_path)
 
     if args.stage in ["all", "export"]:
         sparse_output = output_path / "sparse"
