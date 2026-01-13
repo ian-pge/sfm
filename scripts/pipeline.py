@@ -296,8 +296,6 @@ def run_undistortion(sparse_path, images_path, output_path):
         str(undistorted_output),
         "--output_type",
         "COLMAP",
-        "--max_image_size",
-        "2000",
     ]
     
     try:
@@ -519,7 +517,7 @@ def main():
     )
     parser.add_argument(
         "--camera_model",
-        default="SIMPLE_RADIAL",
+        default="OPENCV",
         help="Camera model for auto-intrinsics (e.g. PINHOLE, SIMPLE_RADIAL, OPENCV)",
     )
     parser.add_argument(
