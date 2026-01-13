@@ -58,7 +58,21 @@ Run the pipeline using `scripts/pipeline.py`:
 pixi run sfm
 ```
 
+### Video Processing (Optional)
+To create a dataset from a video file:
+```bash
+pixi run process-video --video /path/to/video.mp4 --num_frames 200 --downscale 1
+```
+This extracts disjoint frames and saves them to `datasets/<video_name>/images`.
+
+**Arguments:**
+- `--video`: Path to the input video file (Required).
+- `--num_frames`: Number of frames to extract (Required).
+- `--downscale`: Downscale factor (e.g. `2` for half resolution). Default: `1` (no downscaling).
+- `--output`: Output dataset directory. Default: `datasets/<video_name_no_ext>`.
+
 ### Arguments
+
 
 example
 ```bash
