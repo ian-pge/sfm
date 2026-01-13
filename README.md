@@ -90,6 +90,7 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
 - `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
 - `--mapper`: Reconstruction mapper to use: `glomap` (default, global SfM) or `colmap` (incremental SfM).
 - `--undistort`: (Optional) Undistort images after reconstruction. Crucial for Gaussian Splatting.
+- `--normalize`: (Optional) Normalize scene to unit sphere (centered and scaled). Useful for creating standard datasets (Replica, Scannet++ etc).
 - `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
 
 ### Gaussian Splatting Workflow
@@ -103,6 +104,11 @@ pixi run sfm --dataset /path/to/distorted_dataset --undistort --camera_model SIM
 
 This will produce a `undistorted/` folder ready for training.
 
+To create a dataset compatible with standard viewers or pipelines that expect a unit-scaled scene (like Replica/Scannet++), add `--normalize`:
+```bash
+pixi run sfm --dataset /path/to/dataset --undistort --normalize
+```
+
 ## Output
 
 The results will be saved in the `--output` directory:
@@ -111,7 +117,7 @@ The results will be saved in the `--output` directory:
 - `pairs.txt`: List of image pairs.
 - `database.db`: SQLite database with all data.
 - **`sparse.ply` / `sparse.glb`**: Exported point clouds for visualization.
-- **`sparse/`**: The final sparse reconstruction files.
+- **`sparse/`**: The final sparse reconstruction files (normalized if `--normalize` used).
 - **`undistorted/`** (if `--undistort` is used):
     - `images/`: Undistorted pinhole images.
-    - `sparse/0/`: Corresponding sparse model (compatible with standard Splatting loaders).
+    - `sparse/0/`: Corresponding sparse model (compatible with standard Splatting loaders, normalized if `--normalize` used).

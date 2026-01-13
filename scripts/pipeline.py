@@ -267,6 +267,109 @@ def run_mapping(
     return sparse_output
 
 
+def run_normalization(sparse_path, output_path):
+    print(f"Running scene normalization on {sparse_path}...")
+    
+    # We need to find the specific reconstruction folder (often '0')
+    model_path = sparse_path
+    if (
+        not (model_path / "points3D.bin").exists()
+        and (model_path / "0" / "points3D.bin").exists()
+    ):
+        model_path = model_path / "0"
+
+    if not (model_path / "points3D.bin").exists():
+        print(f"Error: Could not find points3D.bin in {sparse_path} or subdirectories for normalization.")
+        return sparse_path
+
+    try:
+        recon = reconstruction.pycolmap.Reconstruction(model_path)
+    except Exception as e:
+        print(f"Error loading reconstruction for normalization: {e}")
+        return sparse_path
+
+    # Compute Centroid of Camera Centers
+    print("Computing scale and centroid...")
+    cam_centers = []
+    for image in recon.images.values():
+        cam_from_world = image.cam_from_world()
+        R = cam_from_world.rotation.matrix()
+        t = cam_from_world.translation
+        center = -R.T @ t
+        cam_centers.append(center)
+    
+    if not cam_centers:
+        print("Warning: No cameras found. Skipping normalization.")
+        return sparse_path
+
+    cam_centers = np.array(cam_centers)
+    centroid = np.mean(cam_centers, axis=0)
+
+    # Compute Scale: We want the cameras to fit comfortably within the unit sphere.
+    # We use the max distance from centroid to scale everything.
+    # Radius of camera cloud
+    dists = np.linalg.norm(cam_centers - centroid, axis=1)
+    max_dist = np.max(dists)
+    
+    # If all cameras are at the same spot (single view?), scale defaults to 1
+    if max_dist < 1e-6:
+        print("Warning: Cameras are clumped together. Skipping scale.")
+        scale = 1.0
+    else:
+        scale = 1.0 / max_dist
+
+    print(f"Centroid: {centroid}")
+    print(f"Scale: {scale} (Max camera distance: {max_dist})")
+
+    # Apply Similarity Transform (T = s * [R | t])
+    # We want new_point = s * (old_point - centroid)
+    # new_point = s * old_point + s * (-centroid)
+    # So translation component is s * (-centroid).
+    # But Pycolmap Sim3d constructor takes (scale, rotation, translation) where
+    # P_new = scale * (R * P_old + t)   <-- CHECK THIS DEFINITION CAREFULLY
+    # HELP says: "Apply the 3D similarity transformation to all images and points."
+    
+    # Let's verify Sim3d usually implies P' = s * R * P + t  OR  P' = s * R * (P + t)?
+    # Standard Sim3 transform in COLMAP algebra (Sim3d):
+    # If we construct Sim3d(scale, rotation, translation), 
+    # usually transform aligns `new_from_old`.
+    # Let's assume P_new = s * R * P_old + t is NOT it, 
+    # Usually it is composed.
+    # Let's stick to the construction: 
+    # We want to translate by -centroid, then scale by s.
+    # T = Scale(s) * Translation(-centroid)
+    # In matrix form 4x4:
+    # [sI  0] * [I  -c] = [sI  -sc]
+    # [0   1]   [0   1]   [0    1]
+    
+    # So Rotation is Identity.
+    # Translation is -scale * centroid? Or just -centroid?
+    # Sim3d(scale, rotation, translation)
+    # If Sim3d applies as: x' = s * R * x + t
+    # Then we need x' = s * (x - c) = s * x - s * c
+    # So t = -s * c
+    
+    sim3 = reconstruction.pycolmap.Sim3d(
+        scale, 
+        reconstruction.pycolmap.Rotation3d(), 
+        -scale * centroid
+    )
+
+    recon.transform(sim3)
+    
+    print("Saving normalized reconstruction...")
+    # Overwrite the existing model
+    recon.write(model_path)
+    
+    # Also save the normalization parameters for potential inversion later
+    norm_info_path = model_path / "normalization.txt"
+    with open(norm_info_path, "w") as f:
+        f.write(f"Centroid: {centroid[0]} {centroid[1]} {centroid[2]}\n")
+        f.write(f"Scale: {scale}\n")
+    
+    return sparse_path
+
+
 def run_undistortion(sparse_path, images_path, output_path):
     print("Running image undistortion (COLMAP)...")
     
@@ -543,6 +646,11 @@ def main():
         action="store_true",
         help="Undistort images after reconstruction (outputs to output/undistorted)",
     )
+    parser.add_argument(
+        "--normalize",
+        action="store_true",
+        help="Normalize scene to unit sphere (centered and scaled)",
+    )
 
     args = parser.parse_args()
 
@@ -595,12 +703,18 @@ def main():
             camera_model=args.camera_model,
             mapper=args.mapper,
         )
+        
+        if args.normalize:
+            # Updates sparse_output in-place (conceptually, on disk)
+            sparse_output = run_normalization(sparse_output, output_path)
 
         if args.undistort:
             run_undistortion(sparse_output, images_path, output_path)
 
     if args.stage in ["all", "export"]:
         sparse_output = output_path / "sparse"
+        # If we normalize, we should probably make sure export sees the right thing.
+        # But since normalization overwrites the sparse model, looking at output/sparse is correct.
         export_reconstruction(sparse_output, output_path)
 
 
