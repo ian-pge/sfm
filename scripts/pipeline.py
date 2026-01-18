@@ -1,16 +1,16 @@
 import argparse
+import colorsys
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
-import shutil
 from pathlib import Path
-import colorsys
 
 import numpy as np
+import torch
 import trimesh
 import trimesh.path.entities
-import torch
 
 # Add external scripts to path for SuperGluePretrainedNetwork (just in case, though ALIKED doesn't use it)
 current_dir = Path(__file__).parent
@@ -19,8 +19,13 @@ if external_dir.exists():
     sys.path.append(str(external_dir))
 
 
-from hloc import extract_features, match_features, pairs_from_exhaustive, pairs_from_retrieval, reconstruction
-
+from hloc import (
+    extract_features,
+    match_features,
+    pairs_from_exhaustive,
+    pairs_from_retrieval,
+    reconstruction,
+)
 
 # Configuration for different feature extractors and matchers
 FEATURE_CONFIGS = {
@@ -70,7 +75,7 @@ def run_feature_extraction(images_path, output_path, feature_type="aliked"):
     return feature_path
 
 
-def generate_sequential_pairs(images_path, pairs_path, window_size=10):
+def generate_sequential_pairs(images_path, pairs_path, window_size=3):
     images = sorted([p.name for p in images_path.iterdir() if p.is_file()])
     print(f"Found {len(images)} images for sequential matching.")
 
@@ -84,7 +89,13 @@ def generate_sequential_pairs(images_path, pairs_path, window_size=10):
             f.write(f"{p1} {p2}\n")
 
 
-def run_matching(output_path, feature_path, images_path, feature_type="aliked", matching_type="sequential"):
+def run_matching(
+    output_path,
+    feature_path,
+    images_path,
+    feature_type="aliked",
+    matching_type="sequential",
+):
     config = FEATURE_CONFIGS[feature_type]
     matcher_conf = match_features.confs[config["matcher"]]
     match_path = output_path / "matches.h5"
@@ -92,7 +103,7 @@ def run_matching(output_path, feature_path, images_path, feature_type="aliked", 
 
     if matching_type == "sequential":
         print(f"Generating sequential pairs to {pairs_path}...")
-        generate_sequential_pairs(images_path, pairs_path, window_size=10)
+        generate_sequential_pairs(images_path, pairs_path, window_size=3)
     elif matching_type == "exhaustive":
         print(f"Generating exhaustive pairs to {pairs_path}...")
         pairs_from_exhaustive.main(pairs_path, features=feature_path)
@@ -100,23 +111,27 @@ def run_matching(output_path, feature_path, images_path, feature_type="aliked", 
         print(f"Extracting global features for retrieval...")
         global_conf = extract_features.confs["netvlad"]
         global_features_path = output_path / "global_features.h5"
-        extract_features.main(global_conf, images_path, feature_path=global_features_path)
-        
+        extract_features.main(
+            global_conf, images_path, feature_path=global_features_path
+        )
+
         print(f"Generating retrieval pairs to {pairs_path}...")
         pairs_from_retrieval.main(global_features_path, pairs_path, num_matched=20)
     elif matching_type == "hybrid":
         print("Running hybrid matching (Sequential + Retrieval)...")
         pairs_seq = output_path / "pairs_sequential.txt"
-        generate_sequential_pairs(images_path, pairs_seq, window_size=10)
-        
+        generate_sequential_pairs(images_path, pairs_seq, window_size=3)
+
         print("Generating retrieval pairs...")
         global_conf = extract_features.confs["netvlad"]
         global_features_path = output_path / "global_features.h5"
-        extract_features.main(global_conf, images_path, feature_path=global_features_path)
-        
+        extract_features.main(
+            global_conf, images_path, feature_path=global_features_path
+        )
+
         pairs_ret = output_path / "pairs_retrieval.txt"
         pairs_from_retrieval.main(global_features_path, pairs_ret, num_matched=20)
-        
+
         # Merge pairs
         pairs = set()
         for p in [pairs_seq, pairs_ret]:
@@ -127,7 +142,7 @@ def run_matching(output_path, feature_path, images_path, feature_type="aliked", 
                     if p1 > p2:
                         p1, p2 = p2, p1
                     pairs.add((p1, p2))
-                    
+
         print(f"Merged {len(pairs)} unique pairs from Sequential and Retrieval.")
         with open(pairs_path, "w") as f:
             for p1, p2 in sorted(pairs):
@@ -269,7 +284,7 @@ def run_mapping(
 
 def run_normalization(sparse_path, output_path):
     print(f"Running scene normalization on {sparse_path}...")
-    
+
     # We need to find the specific reconstruction folder (often '0')
     model_path = sparse_path
     if (
@@ -279,7 +294,9 @@ def run_normalization(sparse_path, output_path):
         model_path = model_path / "0"
 
     if not (model_path / "points3D.bin").exists():
-        print(f"Error: Could not find points3D.bin in {sparse_path} or subdirectories for normalization.")
+        print(
+            f"Error: Could not find points3D.bin in {sparse_path} or subdirectories for normalization."
+        )
         return sparse_path
 
     try:
@@ -297,7 +314,7 @@ def run_normalization(sparse_path, output_path):
         t = cam_from_world.translation
         center = -R.T @ t
         cam_centers.append(center)
-    
+
     if not cam_centers:
         print("Warning: No cameras found. Skipping normalization.")
         return sparse_path
@@ -310,7 +327,7 @@ def run_normalization(sparse_path, output_path):
     # Radius of camera cloud
     dists = np.linalg.norm(cam_centers - centroid, axis=1)
     max_dist = np.max(dists)
-    
+
     # If all cameras are at the same spot (single view?), scale defaults to 1
     if max_dist < 1e-6:
         print("Warning: Cameras are clumped together. Skipping scale.")
@@ -328,55 +345,53 @@ def run_normalization(sparse_path, output_path):
     # But Pycolmap Sim3d constructor takes (scale, rotation, translation) where
     # P_new = scale * (R * P_old + t)   <-- CHECK THIS DEFINITION CAREFULLY
     # HELP says: "Apply the 3D similarity transformation to all images and points."
-    
+
     # Let's verify Sim3d usually implies P' = s * R * P + t  OR  P' = s * R * (P + t)?
     # Standard Sim3 transform in COLMAP algebra (Sim3d):
-    # If we construct Sim3d(scale, rotation, translation), 
+    # If we construct Sim3d(scale, rotation, translation),
     # usually transform aligns `new_from_old`.
-    # Let's assume P_new = s * R * P_old + t is NOT it, 
+    # Let's assume P_new = s * R * P_old + t is NOT it,
     # Usually it is composed.
-    # Let's stick to the construction: 
+    # Let's stick to the construction:
     # We want to translate by -centroid, then scale by s.
     # T = Scale(s) * Translation(-centroid)
     # In matrix form 4x4:
     # [sI  0] * [I  -c] = [sI  -sc]
     # [0   1]   [0   1]   [0    1]
-    
+
     # So Rotation is Identity.
     # Translation is -scale * centroid? Or just -centroid?
     # Sim3d(scale, rotation, translation)
     # If Sim3d applies as: x' = s * R * x + t
     # Then we need x' = s * (x - c) = s * x - s * c
     # So t = -s * c
-    
+
     sim3 = reconstruction.pycolmap.Sim3d(
-        scale, 
-        reconstruction.pycolmap.Rotation3d(), 
-        -scale * centroid
+        scale, reconstruction.pycolmap.Rotation3d(), -scale * centroid
     )
 
     recon.transform(sim3)
-    
+
     print("Saving normalized reconstruction...")
     # Overwrite the existing model
     recon.write(model_path)
-    
+
     # Also save the normalization parameters for potential inversion later
     norm_info_path = model_path / "normalization.txt"
     with open(norm_info_path, "w") as f:
         f.write(f"Centroid: {centroid[0]} {centroid[1]} {centroid[2]}\n")
         f.write(f"Scale: {scale}\n")
-    
+
     return sparse_path
 
 
 def run_undistortion(sparse_path, images_path, output_path):
     print("Running image undistortion (COLMAP)...")
-    
+
     # Define undistortion output path
     undistorted_output = output_path / "undistorted"
     undistorted_output.mkdir(exist_ok=True, parents=True)
-    
+
     # We need to find the correct sparse model path (same logic as export)
     model_path = sparse_path
     if (
@@ -400,29 +415,31 @@ def run_undistortion(sparse_path, images_path, output_path):
         "--output_type",
         "COLMAP",
     ]
-    
+
     try:
         subprocess.run(cmd, check=True)
         print(f"Undistorted images saved to {undistorted_output / 'images'}")
-        
+
         # Gaussian Splatting loaders typically expect the model in 'sparse/0'
         # COLMAP image_undistorter saves directly to 'sparse'.
         # We'll move it to 'sparse/0' for maximum compatibility.
         sparse_dir = undistorted_output / "sparse"
         sparse_0_dir = sparse_dir / "0"
-        
+
         if sparse_dir.exists() and not sparse_0_dir.exists():
-            print("Organizing output for Gaussian Splatting (moving sparse -> sparse/0)...")
+            print(
+                "Organizing output for Gaussian Splatting (moving sparse -> sparse/0)..."
+            )
             sparse_0_dir.mkdir(parents=True)
             for item in sparse_dir.iterdir():
-                if item.name == "0": continue
+                if item.name == "0":
+                    continue
                 # Move files/dirs into 0/
                 shutil.move(str(item), str(sparse_0_dir / item.name))
 
     except subprocess.CalledProcessError as e:
         print(f"Error running image undistortion: {e}")
         # Don't exit, just print error as this is post-processing
-
 
 
 def export_reconstruction(sparse_path, output_path):
@@ -469,9 +486,11 @@ def export_reconstruction(sparse_path, output_path):
 
     print(f"Saving {ply_path}...")
     # o3d.io.write_point_cloud(str(ply_path), pcd)
-    
+
     # Use Trimesh for PLY export instead
-    pcd_trimesh = trimesh.PointCloud(vertices=points, colors=(np.array(colors) * 255).astype(np.uint8))
+    pcd_trimesh = trimesh.PointCloud(
+        vertices=points, colors=(np.array(colors) * 255).astype(np.uint8)
+    )
     pcd_trimesh.export(str(ply_path))
 
     print(f"Saving {glb_path}...")
@@ -499,9 +518,9 @@ def export_reconstruction(sparse_path, output_path):
             t = cam_from_world.translation
             center = -R.T @ t
             cam_centers.append(center)
-        
+
         cam_centers = np.array(cam_centers)
-        
+
         if len(cam_centers) > 1:
             # Compute distances to nearest neighbor for each camera
             # Using simple broadcasting (N is typically < few thousands, so N^2 is fine)
@@ -509,21 +528,23 @@ def export_reconstruction(sparse_path, output_path):
             d1 = cam_centers[:, None, :]
             d2 = cam_centers[None, :, :]
             dists = np.linalg.norm(d1 - d2, axis=-1)
-            
+
             # Set diagonal to infinity to ignore self-distance
             np.fill_diagonal(dists, np.inf)
-            
+
             # Find distance to nearest neighbor for each camera
             min_dists = np.min(dists, axis=1)
-            
+
             # Use the median of these nearest distances as a robust scale base
             # We scale it slightly (e.g., 0.5) so frustums don't touch/overlap too much
             median_nn_dist = np.median(min_dists)
             cam_scale = median_nn_dist * 1.5
-            print(f"Adaptive camera scale: {cam_scale:.4f} (based on median neighbor dist: {median_nn_dist:.4f})")
-            
+            print(
+                f"Adaptive camera scale: {cam_scale:.4f} (based on median neighbor dist: {median_nn_dist:.4f})"
+            )
+
         elif points:
-             # Fallback if only 1 camera
+            # Fallback if only 1 camera
             bbox_min = np.min(points, axis=0)
             bbox_max = np.max(points, axis=0)
             scene_scale = np.linalg.norm(bbox_max - bbox_min)
@@ -538,8 +559,8 @@ def export_reconstruction(sparse_path, output_path):
         w, h = (1.0, 0.75)
         # 5 vertices: Origin, and 4 corners at Z=1*scale
         raw_corners = (
-             np.array([[0, 0, 0], [-w, -h, 1], [w, -h, 1], [w, h, 1], [-w, h, 1]])
-             * cam_scale
+            np.array([[0, 0, 0], [-w, -h, 1], [w, -h, 1], [w, h, 1], [-w, h, 1]])
+            * cam_scale
         )
 
         all_vertices = []
@@ -573,7 +594,7 @@ def export_reconstruction(sparse_path, output_path):
             # Create entity
             entity_indices = [idx + start_idx for idx in camera_indices]
             all_entities.append(trimesh.path.entities.Line(points=entity_indices))
-            
+
             # Create color gradient (Rainbow/HSV)
             # Map index to hue 0.0-0.7 (Red to Blue, skipping purple/magenta to keeping it distinct from start)
             # Or full loop 0.0-1.0
@@ -584,8 +605,7 @@ def export_reconstruction(sparse_path, output_path):
 
         if all_vertices:
             camera_vis = trimesh.path.Path3D(
-                vertices=np.array(all_vertices),
-                entities=all_entities
+                vertices=np.array(all_vertices), entities=all_entities
             )
             camera_vis.colors = np.array(all_colors)
             scene.add_geometry(camera_vis)
@@ -703,7 +723,7 @@ def main():
             camera_model=args.camera_model,
             mapper=args.mapper,
         )
-        
+
         if args.normalize:
             # Updates sparse_output in-place (conceptually, on disk)
             sparse_output = run_normalization(sparse_output, output_path)
@@ -716,8 +736,9 @@ def main():
         # If we normalize, we should probably make sure export sees the right thing.
         # But since normalization overwrites the sparse model, looking at output/sparse is correct.
         export_reconstruction(sparse_output, output_path)
-
-
+        # If we normalize, we should probably make sure export sees the right thing.
+        # But since normalization overwrites the sparse model, looking at output/sparse is correct.
+        export_reconstruction(sparse_output, output_path)
 
 
 if __name__ == "__main__":
