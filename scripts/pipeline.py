@@ -95,6 +95,8 @@ def run_matching(
     images_path,
     feature_type="aliked",
     matching_type="sequential",
+    window_size=10,
+    num_matched=20,
 ):
     config = FEATURE_CONFIGS[feature_type]
     matcher_conf = match_features.confs[config["matcher"]]
@@ -103,7 +105,7 @@ def run_matching(
 
     if matching_type == "sequential":
         print(f"Generating sequential pairs to {pairs_path}...")
-        generate_sequential_pairs(images_path, pairs_path, window_size=3)
+        generate_sequential_pairs(images_path, pairs_path, window_size=window_size)
     elif matching_type == "exhaustive":
         print(f"Generating exhaustive pairs to {pairs_path}...")
         pairs_from_exhaustive.main(pairs_path, features=feature_path)
@@ -116,11 +118,11 @@ def run_matching(
         )
 
         print(f"Generating retrieval pairs to {pairs_path}...")
-        pairs_from_retrieval.main(global_features_path, pairs_path, num_matched=20)
+        pairs_from_retrieval.main(global_features_path, pairs_path, num_matched=num_matched)
     elif matching_type == "hybrid":
         print("Running hybrid matching (Sequential + Retrieval)...")
         pairs_seq = output_path / "pairs_sequential.txt"
-        generate_sequential_pairs(images_path, pairs_seq, window_size=3)
+        generate_sequential_pairs(images_path, pairs_seq, window_size=window_size)
 
         print("Generating retrieval pairs...")
         global_conf = extract_features.confs["netvlad"]
@@ -130,7 +132,7 @@ def run_matching(
         )
 
         pairs_ret = output_path / "pairs_retrieval.txt"
-        pairs_from_retrieval.main(global_features_path, pairs_ret, num_matched=20)
+        pairs_from_retrieval.main(global_features_path, pairs_ret, num_matched=num_matched)
 
         # Merge pairs
         pairs = set()
@@ -671,8 +673,29 @@ def main():
         action="store_true",
         help="Normalize scene to unit sphere (centered and scaled)",
     )
+    parser.add_argument(
+        "--hybrid",
+        action="store_true",
+        help="Alias for --matching_type hybrid. Adds global retrieval loop closure to sequential matching.",
+    )
+    parser.add_argument(
+        "--window_size",
+        type=int,
+        default=10,
+        help="Number of sequential images to match (default: 10). Increase this for high-FPS video.",
+    )
+    parser.add_argument(
+        "--retrieval_num",
+        type=int,
+        default=30,
+        help="Number of candidates for Global Retrieval (default: 30). Increase for repetitive scenes.",
+    )
 
     args = parser.parse_args()
+
+    # Handle the --hybrid alias
+    if args.hybrid:
+        args.matching_type = "hybrid"
 
     if torch.cuda.is_available():
         print(f"✅ GPU Detected: {torch.cuda.get_device_name(0)}")
@@ -706,6 +729,8 @@ def main():
             images_path,
             feature_type=args.feature_type,
             matching_type=args.matching_type,
+            window_size=args.window_size,
+            num_matched=args.retrieval_num,
         )
 
     if args.stage in ["all", "mapping"]:

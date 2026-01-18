@@ -87,11 +87,35 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
   - `exhaustive`: Matches every image with every other image. Good for small datasets.
   - `retrieval`: Uses global descriptors (NetVLAD) to find overlapping pairs. Good for large datasets.
   - `hybrid`: Combines `sequential` and `retrieval` matching. Best for video datasets where loop closure is needed.
+- `--window_size`: Number of adjacent frames to match in sequential/hybrid mode (Default: 10). Increase to 20+ for high-FPS video.
+- `--retrieval_num`: Number of loop closure candidates to check in retrieval/hybrid mode (Default: 30). Increase for repetitive scenes.
 - `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
 - `--mapper`: Reconstruction mapper to use: `glomap` (default, global SfM) or `colmap` (incremental SfM).
 - `--undistort`: (Optional) Undistort images after reconstruction. Crucial for Gaussian Splatting.
 - `--normalize`: (Optional) Normalize scene to unit sphere (centered and scaled). Useful for creating standard datasets (Replica, Scannet++ etc).
 - `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
+
+## Recommended Usage (Car/Vehicle Scanning)
+
+For scanning vehicles using video, use the **Hybrid** mode to maintain tracking while allowing loop closure (connecting the end of the walk-around to the start).
+
+```bash
+# Standard Video Scan
+python scripts/pipeline.py \
+    --dataset datasets/my_car_video \
+    --hybrid \
+    --undistort \
+    --normalize
+
+# High-FPS Video or Repetitive Feature Scan
+python scripts/pipeline.py \
+    --dataset datasets/my_car_video \
+    --hybrid \
+    --window_size 20 \
+    --retrieval_num 50 \
+    --undistort \
+    --normalize
+```
 
 ### Gaussian Splatting Workflow
 
