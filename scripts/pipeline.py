@@ -94,9 +94,9 @@ def run_matching(
     feature_path,
     images_path,
     feature_type="aliked",
-    matching_type="sequential",
+    matching_type="hybrid",
     window_size=10,
-    num_matched=20,
+    num_matched=30,
 ):
     config = FEATURE_CONFIGS[feature_type]
     matcher_conf = match_features.confs[config["matcher"]]
@@ -654,8 +654,8 @@ def main():
     parser.add_argument(
         "--matching_type",
         choices=["sequential", "exhaustive", "retrieval", "hybrid"],
-        default="sequential",
-        help="Matching strategy (default: sequential). Use 'exhaustive' for small datasets, 'retrieval' for large ones.",
+        default="hybrid",
+        help="Matching strategy (default: hybrid). Use 'exhaustive' for small datasets, 'retrieval' for large ones.",
     )
     parser.add_argument(
         "--mapper",
