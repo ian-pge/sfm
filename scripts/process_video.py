@@ -210,8 +210,10 @@ def main():
         root_dir = Path(__file__).parent.parent
         output_dir = root_dir / "datasets" / video_paths[0].stem
     
-    output_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output directory: {output_dir}")
+    
+    images_dir = output_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
     
     global_frame_count = 0
     
