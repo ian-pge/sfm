@@ -1,0 +1,37 @@
+[
+  {
+    "label": "DevPod: Up",
+    "command": "devpod up ${ZED_WORKTREE_ROOT}",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+  },
+  {
+    "label": "DevPod: Recreate",
+    "command": "devpod up ${ZED_WORKTREE_ROOT} --recreate",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always",
+  },
+  {
+    "label": "DevPod: Reset",
+    "command": "devpod up ${ZED_WORKTREE_ROOT} --reset",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always",
+  },
+  {
+    "label": "DevPod: Up gcloud",
+    "command": "devpod up ${ZED_WORKTREE_ROOT} --provider ssh",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+  },
+  {
+    "label": "DevPod: Recreate gcloud",
+    "command": "devpod up ${ZED_WORKTREE_ROOT} --provider ssh --recreate",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": true,
+    "reveal": "always",
+  },
+]
