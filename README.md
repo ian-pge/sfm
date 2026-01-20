@@ -59,17 +59,22 @@ pixi run sfm
 ```
 
 ### Video Processing (Optional)
-To create a dataset from a video file:
+To create a dataset from video files:
 ```bash
-pixi run process-video --video /path/to/video.mp4 --num_frames 200 --downscale 1
+pixi run process-video --video /path/to/vid1.mp4 /path/to/vid2.mp4 --adaptive
 ```
-This extracts disjoint frames and saves them to `datasets/<video_name>/images`.
+This extracts frames based on visual movement (ORB Features) to avoid redundancy and saves them to `datasets/<first_video_name>/images` with continuous numbering.
 
 **Arguments:**
-- `--video`: Path to the input video file (Required).
-- `--num_frames`: Number of frames to extract (Required).
-- `--downscale`: Downscale factor (e.g. `2` for half resolution). Default: `1` (no downscaling).
-- `--output`: Output dataset directory. Default: `datasets/<video_name_no_ext>`.
+- `--video`: Path to one or more input video files (Required).
+- `--adaptive`: Enable smart adaptive extraction (Feature-based Parallax).
+- `--overlap`: (Adaptive) Feature overlap threshold (0.0-1.0). Default `0.50`. Lower = fewer images (wider baseline).
+- `--num_frames`: (Fixed Mode) Number of frames to extract per video.
+- `--downscale`: Downscale factor (e.g. `2` for half resolution). Default: `1`.
+- `--output`: Output dataset directory. Default: `datasets/<first_video_name>`.
+
+**Logging:**
+The script prints real-time extraction stats (Overlap %, Match Count) to the console for every saved frame.
 
 ### Arguments
 
