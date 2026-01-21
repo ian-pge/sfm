@@ -35,7 +35,8 @@ def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, s
         sys.exit(1)
         
     target_fps = num_frames / duration
-    print(f"Mode: Fixed (Target FPS: {target_fps:.4f} for {num_frames} frames)")
+    target_fps = num_frames / duration
+    print(f"ℹ️  Mode: Fixed (Target FPS: {target_fps:.4f} for {num_frames} frames)")
     
     filters = [f"fps={target_fps}"]
     if downscale_factor > 1:
@@ -54,7 +55,7 @@ def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, s
         str(output_pattern)
     ]
     
-    print("Running ffmpeg...")
+    print("🎬 Running ffmpeg...")
     try:
         subprocess.run(cmd, check=True)
         # Count extracted frames
@@ -84,7 +85,7 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
     
     # Setup Device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    print(f"🖥️  Using device: {device}")
 
     # --- CHANGE 1: Use ALIKED (Deep Learning Features) ---
     # aliked-n16, aliked-n16rot, aliked-n32, etc. 
@@ -117,15 +118,15 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
     # Conservative stride: Analyse ~10 frames per second
     stride = max(1, int(fps / 10))
     
-    print(f"--- STARTING PRECISE EXTRACTION ({video_path.name}) ---")
-    print("Using ALIKED + LightGlue + Homography + Polygon Intersection")
-    print(f"  - Original Resolution: {original_w}x{original_h}")
-    print(f"  - Downscale for Save:  {downscale_factor}x (Output: {original_w//downscale_factor}x{original_h//downscale_factor})")
-    print(f"  - Analysis Resolution: {w_proc}x{h_proc}")
-    print(f"  - Frame Rate:          {fps:.2f} fps")
-    print(f"  - Analysis Stride:     {stride} frames (Checking every {stride/fps*1000:.1f} ms)")
+    print(f"🚀 --- STARTING PRECISE EXTRACTION ({video_path.name}) ---")
+    print("✨ Using ALIKED + LightGlue + Homography + Polygon Intersection")
+    print(f"  📐 Original Resolution: {original_w}x{original_h}")
+    print(f"  📉 Downscale for Save:  {downscale_factor}x (Output: {original_w//downscale_factor}x{original_h//downscale_factor})")
+    print(f"  🔍 Analysis Resolution: {w_proc}x{h_proc}")
+    print(f"  ⏱️  Frame Rate:          {fps:.2f} fps")
+    print(f"  ⏩ Analysis Stride:     {stride} frames (Checking every {stride/fps*1000:.1f} ms)")
     
-    pbar = tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), desc="Processing Frames", unit="frame")
+    pbar = tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), desc="🎥 Processing Frames", unit="frame")
 
     while True:
         # Optimization: Skip frames according to stride
@@ -232,9 +233,12 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
             filename = images_dir / f"frame_{saved_count:05d}.png"
             cv2.imwrite(str(filename), save_frame)
             
+            filename = images_dir / f"frame_{saved_count:05d}.png"
+            cv2.imwrite(str(filename), save_frame)
+            
             elapsed_time = frame_count / fps if fps > 0 else 0
             # print(f"[Saved {saved_count:05d}] T={elapsed_time:06.1f}s | Geo-Overlap: {calculated_overlap*100:05.1f}%")
-            pbar.set_postfix(saved=saved_count, overlap=f"{calculated_overlap*100:.1f}%")
+            pbar.set_postfix_str(f"💾 Saved: {saved_count} | 📐 Overlap: {calculated_overlap*100:.1f}%")
             
             # Update References
             prev_feats = feats
@@ -270,7 +274,9 @@ def main():
         root_dir = Path(__file__).parent.parent
         output_dir = root_dir / "datasets" / video_paths[0].stem
     
-    print(f"Output directory: {output_dir}")
+        output_dir = root_dir / "datasets" / video_paths[0].stem
+    
+    print(f"📂 Output directory: {output_dir}")
     
     images_dir = output_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -279,10 +285,10 @@ def main():
     
     for video in video_paths:
         if not video.exists():
-            print(f"Error: {video} not found")
+            print(f"❌ Error: {video} not found")
             continue
             
-        print(f"\n--- Processing {video.name} ---")
+        print(f"\n🎞️  --- Processing {video.name} ---")
         
         if args.adaptive:
             count = extract_precise_geometry(video, output_dir, args.overlap, args.downscale, start_number=global_frame_count)
@@ -294,7 +300,9 @@ def main():
             
         global_frame_count += count
         
-    print(f"\nAll Done. Total frames extracted: {global_frame_count}")
+        global_frame_count += count
+        
+    print(f"\n✅ All Done. Total frames extracted: {global_frame_count}")
 
 if __name__ == "__main__":
     main()
