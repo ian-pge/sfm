@@ -126,129 +126,127 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
     print(f"  ⏱️  Frame Rate:          {fps:.2f} fps")
     print(f"  ⏩ Analysis Stride:     {stride} frames (Checking every {stride/fps*1000:.1f} ms)")
     
-    pbar = tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), desc="🎥 Processing Frames", unit="frame")
+    # Flush stdout to ensure clean state before progress bar
+    sys.stdout.flush()
+    
+    with tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), desc="🎥 Processing Frames", unit="frame", dynamic_ncols=True, file=sys.stdout) as pbar:
+        while True:
+            # Optimization: Skip frames according to stride
+            if frame_count % stride != 0:
+                grabbed = cap.grab()
+                if not grabbed:
+                    break
+                frame_count += 1
+                pbar.update(1)
+                continue
 
-    while True:
-        # Optimization: Skip frames according to stride
-        if frame_count % stride != 0:
-            grabbed = cap.grab()
-            if not grabbed:
+            ret, frame_full = cap.read()
+            if not ret:
                 break
-            frame_count += 1
-            pbar.update(1)
-            continue
-
-        ret, frame_full = cap.read()
-        if not ret:
-            break
+                
+            # Processing resolution (keep this consistent)
+            process_frame = cv2.resize(frame_full, (w_proc, h_proc))
             
-        # Processing resolution (keep this consistent)
-        process_frame = cv2.resize(frame_full, (w_proc, h_proc))
-        
-        # Prepare for LightGlue (RGB + Tensor)
-        frame_rgb = cv2.cvtColor(process_frame, cv2.COLOR_BGR2RGB)
-        frame_tensor = numpy_image_to_torch(frame_rgb).to(device)
-        
-        # Extract
-        # ALIKED extraction
-        with torch.no_grad():
-            feats = extractor.extract(frame_tensor)
-        
-        should_save = False
-        calculated_overlap = 0.0
-        
-        if prev_feats is None:
-            should_save = True
-            calculated_overlap = 0.0
-        else:
-            # --- CHANGE 3: Geometric Verification ---
-            # Match
+            # Prepare for LightGlue (RGB + Tensor)
+            frame_rgb = cv2.cvtColor(process_frame, cv2.COLOR_BGR2RGB)
+            frame_tensor = numpy_image_to_torch(frame_rgb).to(device)
+            
+            # Extract
+            # ALIKED extraction
             with torch.no_grad():
-                matches = matcher({'image0': prev_feats, 'image1': feats})
-                
-            # Filter matches
-            matches0 = matches['matches0'][0] # indices of matches in image1 for each kp in image0
-            valid = matches0 > -1
+                feats = extractor.extract(frame_tensor)
             
-            # We need at least 4 points to find a Homography
-            if valid.sum() > 10:
-                mkpts0 = prev_feats['keypoints'][0][valid].cpu().numpy()
-                mkpts1 = feats['keypoints'][0][matches0[valid]].cpu().numpy()
-                
-                # Find Homography (Matrix M maps Current -> Previous)
-                # We use RANSAC to ignore outliers
-                # Reshape for findHomography
-                dst_pts = mkpts1.reshape(-1, 1, 2)
-                src_pts = mkpts0.reshape(-1, 1, 2)
-                
-                M, mask = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, 5.0)
-                
-                if M is not None:
-                    # 1. Project current frame corners into previous frame space
-                    curr_corners = np.float32([[0, 0], [0, h_proc], [w_proc, h_proc], [w_proc, 0]]).reshape(-1, 1, 2)
-                    projected_corners = cv2.perspectiveTransform(curr_corners, M)
-                    
-                    try:
-                        # 1. Calculate Intersection Area
-                        ret_area, intersection_contour = cv2.intersectConvexConvex(prev_corners, projected_corners)
-                        
-                        # 2. Calculate Areas of both frames individualy
-                        area_prev = w_proc * h_proc
-                        area_curr = cv2.contourArea(projected_corners)
-                        
-                        # 3. Calculate UNION (Total footprint of both frames)
-                        union_area = area_prev + area_curr - ret_area
-                        
-                        # 4. IoU Calculation (Standard Computer Vision Metric)
-                        # Protect against divide by zero
-                        if union_area > 0:
-                            calculated_overlap = ret_area / union_area
-                        else:
-                            calculated_overlap = 0.0
-                        
-                        if calculated_overlap < overlap_thresh:
-                            should_save = True
-                            
-                    except Exception as e:
-                        should_save = True
-                        calculated_overlap = 0.0
-
-                else:
-                    # Homography failed (too much movement/blur), force save
-                    should_save = True
-                    calculated_overlap = 0.0
-            else:
-                # Not enough matches, scene changed completely
+            should_save = False
+            calculated_overlap = 0.0
+            
+            if prev_feats is None:
                 should_save = True
                 calculated_overlap = 0.0
-
-        if should_save:
-            # Save Logic
-            if downscale_factor > 1:
-                h, w = frame_full.shape[:2]
-                save_frame = cv2.resize(frame_full, (w // downscale_factor, h // downscale_factor))
             else:
-                save_frame = frame_full
+                # --- CHANGE 3: Geometric Verification ---
+                # Match
+                with torch.no_grad():
+                    matches = matcher({'image0': prev_feats, 'image1': feats})
+                    
+                # Filter matches
+                matches0 = matches['matches0'][0] # indices of matches in image1 for each kp in image0
+                valid = matches0 > -1
                 
-            filename = images_dir / f"frame_{saved_count:05d}.png"
-            cv2.imwrite(str(filename), save_frame)
-            
-            filename = images_dir / f"frame_{saved_count:05d}.png"
-            cv2.imwrite(str(filename), save_frame)
-            
-            elapsed_time = frame_count / fps if fps > 0 else 0
-            # print(f"[Saved {saved_count:05d}] T={elapsed_time:06.1f}s | Geo-Overlap: {calculated_overlap*100:05.1f}%")
-            pbar.set_postfix_str(f"💾 Saved: {saved_count} | 📐 Overlap: {calculated_overlap*100:.1f}%")
-            
-            # Update References
-            prev_feats = feats
-            saved_count += 1
-            saved_this_session += 1
-            
-        frame_count += 1
-        pbar.update(1)
+                # We need at least 4 points to find a Homography
+                if valid.sum() > 10:
+                    mkpts0 = prev_feats['keypoints'][0][valid].cpu().numpy()
+                    mkpts1 = feats['keypoints'][0][matches0[valid]].cpu().numpy()
+                    
+                    # Find Homography (Matrix M maps Current -> Previous)
+                    # We use RANSAC to ignore outliers
+                    # Reshape for findHomography
+                    dst_pts = mkpts1.reshape(-1, 1, 2)
+                    src_pts = mkpts0.reshape(-1, 1, 2)
+                    
+                    M, mask = cv2.findHomography(dst_pts, src_pts, cv2.RANSAC, 5.0)
+                    
+                    if M is not None:
+                        # 1. Project current frame corners into previous frame space
+                        curr_corners = np.float32([[0, 0], [0, h_proc], [w_proc, h_proc], [w_proc, 0]]).reshape(-1, 1, 2)
+                        projected_corners = cv2.perspectiveTransform(curr_corners, M)
+                        
+                        try:
+                            # 1. Calculate Intersection Area
+                            ret_area, intersection_contour = cv2.intersectConvexConvex(prev_corners, projected_corners)
+                            
+                            # 2. Calculate Areas of both frames individualy
+                            area_prev = w_proc * h_proc
+                            area_curr = cv2.contourArea(projected_corners)
+                            
+                            # 3. Calculate UNION (Total footprint of both frames)
+                            union_area = area_prev + area_curr - ret_area
+                            
+                            # 4. IoU Calculation (Standard Computer Vision Metric)
+                            # Protect against divide by zero
+                            if union_area > 0:
+                                calculated_overlap = ret_area / union_area
+                            else:
+                                calculated_overlap = 0.0
+                            
+                            if calculated_overlap < overlap_thresh:
+                                should_save = True
+                                
+                        except Exception as e:
+                            should_save = True
+                            calculated_overlap = 0.0
+
+                    else:
+                        # Homography failed (too much movement/blur), force save
+                        should_save = True
+                        calculated_overlap = 0.0
+                else:
+                    # Not enough matches, scene changed completely
+                    should_save = True
+                    calculated_overlap = 0.0
+
+            if should_save:
+                # Save Logic
+                if downscale_factor > 1:
+                    h, w = frame_full.shape[:2]
+                    save_frame = cv2.resize(frame_full, (w // downscale_factor, h // downscale_factor))
+                else:
+                    save_frame = frame_full
+                    
+                filename = images_dir / f"frame_{saved_count:05d}.png"
+                cv2.imwrite(str(filename), save_frame)
+                
+                elapsed_time = frame_count / fps if fps > 0 else 0
+                # print(f"[Saved {saved_count:05d}] T={elapsed_time:06.1f}s | Geo-Overlap: {calculated_overlap*100:05.1f}%")
+                pbar.set_postfix_str(f"💾 Saved: {saved_count} | 📐 Overlap: {calculated_overlap*100:.1f}%")
+                
+                # Update References
+                prev_feats = feats
+                saved_count += 1
+                saved_this_session += 1
+                
+            frame_count += 1
+            pbar.update(1)
         
-    pbar.close()
     cap.release()
     return saved_this_session
 
