@@ -8,7 +8,7 @@ import os
 import torch
 from lightglue import LightGlue, ALIKED
 from lightglue.utils import numpy_image_to_torch
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 def get_video_duration(video_path):
     cmd = [
@@ -127,10 +127,10 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
     print(f"  ⏩ Analysis Stride:     {stride} frames (Checking every {stride/fps*1000:.1f} ms)")
     
     # Flush stdout to ensure clean state before progress bar
-    pbar = tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), desc="🎥 Processing Frames", unit="frame", dynamic_ncols=True, file=sys.stdout, mininterval=0.5)
-
-    print("") # Force newline before progress bar
     sys.stdout.flush()
+    print("") # Force newline before progress bar
+
+    pbar = tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), desc="🎥 Processing Frames", unit="frame", dynamic_ncols=True, mininterval=0.5, leave=False)
     
     with pbar:
         while True:
@@ -298,6 +298,8 @@ def main():
                 print("Error: --num_frames is required for fixed mode")
                 sys.exit(1)
             count = extract_frames_fixed(video, output_dir, args.num_frames, args.downscale, start_number=global_frame_count)
+            
+        print("") # Visual break between videos
             
         global_frame_count += count
         
