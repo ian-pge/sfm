@@ -61,20 +61,20 @@ pixi run sfm
 ### Video Processing (Optional)
 To create a dataset from video files:
 ```bash
-pixi run process-video --video /path/to/vid1.mp4 /path/to/vid2.mp4 --adaptive
+pixi run process-video --video /path/to/vid1.mp4 /path/to/vid2.mp4 --adaptive --overlap 0.8
 ```
-This extracts frames based on visual movement (ORB Features) to avoid redundancy and saves them to `datasets/<first_video_name>/images` with continuous numbering.
+This extracts frames based on rigorous **Geometric Polygon Overlap** (IoU) rather than simple feature counting. It uses **ALIKED** features and **LightGlue** matching to calculate the exact homography and visual intersection between frames.
 
 **Arguments:**
 - `--video`: Path to one or more input video files (Required).
-- `--adaptive`: Enable smart adaptive extraction (Feature-based Parallax).
-- `--overlap`: (Adaptive) Feature overlap threshold (0.0-1.0). Default `0.50`. Lower = fewer images (wider baseline).
+- `--adaptive`: Enable the geometric extraction method (ALIKED + LightGlue + Homography).
+- `--overlap`: (Adaptive) Geometric IoU overlap threshold (0.0-1.0). Default `0.60`. Recommended `0.80` for high quality. Lower = fewer images (wider baseline).
 - `--num_frames`: (Fixed Mode) Number of frames to extract per video.
 - `--downscale`: Downscale factor (e.g. `2` for half resolution). Default: `1`.
 - `--output`: Output dataset directory. Default: `datasets/<first_video_name>`.
 
 **Logging:**
-The script prints real-time extraction stats (Overlap %, Match Count) to the console for every saved frame.
+The script prints real-time extraction stats (IoU %) to the console for every saved frame.
 
 ### Arguments
 
