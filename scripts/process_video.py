@@ -127,9 +127,12 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
     print(f"  ⏩ Analysis Stride:     {stride} frames (Checking every {stride/fps*1000:.1f} ms)")
     
     # Flush stdout to ensure clean state before progress bar
+    pbar = tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), desc="🎥 Processing Frames", unit="frame", dynamic_ncols=True, file=sys.stdout, mininterval=0.5)
+
+    print("") # Force newline before progress bar
     sys.stdout.flush()
     
-    with tqdm(total=int(cap.get(cv2.CAP_PROP_FRAME_COUNT)), desc="🎥 Processing Frames", unit="frame", dynamic_ncols=True, file=sys.stdout) as pbar:
+    with pbar:
         while True:
             # Optimization: Skip frames according to stride
             if frame_count % stride != 0:
