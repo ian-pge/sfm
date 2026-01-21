@@ -9,6 +9,7 @@ import torch
 from lightglue import LightGlue, ALIKED
 from lightglue.utils import numpy_image_to_torch
 from tqdm.auto import tqdm
+import time
 
 def get_video_duration(video_path):
     cmd = [
@@ -35,7 +36,7 @@ def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, s
         sys.exit(1)
         
     target_fps = num_frames / duration
-    target_fps = num_frames / duration
+
     print(f"ℹ️  Mode: Fixed (Target FPS: {target_fps:.4f} for {num_frames} frames)")
     
     filters = [f"fps={target_fps}"]
@@ -275,7 +276,7 @@ def main():
         root_dir = Path(__file__).parent.parent
         output_dir = root_dir / "datasets" / video_paths[0].stem
     
-        output_dir = root_dir / "datasets" / video_paths[0].stem
+
     
     print(f"📂 Output directory: {output_dir}")
     
@@ -283,6 +284,12 @@ def main():
     images_dir.mkdir(parents=True, exist_ok=True)
     
     global_frame_count = 0
+    stats_list = []
+    
+    print(f"{'='*60}")
+    print(f"🚀 PROCESSING {len(video_paths)} VIDEOS")
+    print(f"{'='*60}")
+
     
     for video in video_paths:
         if not video.exists():
@@ -290,6 +297,8 @@ def main():
             continue
             
         print(f"\n🎞️  --- Processing {video.name} ---")
+        start_time = time.time()
+
         
         if args.adaptive:
             count = extract_precise_geometry(video, output_dir, args.overlap, args.downscale, start_number=global_frame_count)
@@ -299,13 +308,60 @@ def main():
                 sys.exit(1)
             count = extract_frames_fixed(video, output_dir, args.num_frames, args.downscale, start_number=global_frame_count)
             
+        
+        # --- Stats Collection ---
+        end_time = time.time()
+        duration_proc = end_time - start_time
+        fps_proc = count / duration_proc if duration_proc > 0 else 0
+        
+        # Get video info for stats
+        try:
+             vid_duration = get_video_duration(video)
+             orig_frames = int(vid_duration * 24) # Approx, or we could use cv2
+        except:
+             vid_duration = 0
+             orig_frames = 0
+             
+        stats = {
+            "name": video.name,
+            "duration": vid_duration,
+            "extracted": count,
+            "time": duration_proc,
+            "fps": fps_proc
+        }
+        stats_list.append(stats)
+        
+        # --- Single Video Recap ---
+        print(f"\n📊 --- RECAP: {video.name} ---")
+        print(f"  Extracted: {count} frames")
+        print(f"  Time taken: {duration_proc:.2f}s")
+        print(f"  Speed:      {fps_proc:.2f} fps")
+        print("------------------------------------------------------------")
+            
         print("") # Visual break between videos
             
         global_frame_count += count
         
-        global_frame_count += count
+
         
     print(f"\n✅ All Done. Total frames extracted: {global_frame_count}")
+    
+    # --- Final Recap ---
+    print(f"\n{'='*60}")
+    print(f"📈 FINAL STATISTICS RECAP")
+    print(f"{'='*60}")
+    print(f"{'Video Name':<30} | {'Extracted':<10} | {'Time (s)':<10} | {'FPS':<6}")
+    print(f"{'-'*30}-+-{'-'*10}-+-{'-'*10}-+-{'-'*6}")
+    
+    total_time = 0
+    for s in stats_list:
+        print(f"{s['name']:<30} | {s['extracted']:<10} | {s['time']:<10.2f} | {s['fps']:<6.2f}")
+        total_time += s['time']
+        
+    print(f"{'-'*60}")
+    print(f"{'TOTAL':<30} | {global_frame_count:<10} | {total_time:<10.2f} | {global_frame_count/total_time if total_time > 0 else 0:<6.2f}")
+    print(f"{'='*60}\n")
+
 
 if __name__ == "__main__":
     main()
