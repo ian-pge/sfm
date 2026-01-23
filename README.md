@@ -61,20 +61,36 @@ pixi run sfm
 ### Video Processing (Optional)
 To create a dataset from video files:
 ```bash
-pixi run process-video --video /path/to/vid1.mp4 /path/to/vid2.mp4 --adaptive --overlap 0.8
+pixi run process-video --video /path/to/vid1.mp4 /path/to/folder_of_videos/ --adaptive
 ```
 This extracts frames based on rigorous **Geometric Polygon Overlap** (IoU) rather than simple feature counting. It uses **ALIKED** features and **LightGlue** matching to calculate the exact homography and visual intersection between frames.
 
 **Arguments:**
-- `--video`: Path to one or more input video files (Required).
+- `--video`: Path to one or more input video files or folders containing videos (Required).
 - `--adaptive`: Enable the geometric extraction method (ALIKED + LightGlue + Homography).
-- `--overlap`: (Adaptive) Geometric IoU overlap threshold (0.0-1.0). Default `0.60`. Recommended `0.80` for high quality. Lower = fewer images (wider baseline).
+- `--overlap`: (Adaptive) Geometric IoU overlap threshold (0.0-1.0). Default `0.80`. Recommended `0.80` for high quality. Lower = fewer images (wider baseline).
 - `--num_frames`: (Fixed Mode) Number of frames to extract per video.
 - `--downscale`: Downscale factor (e.g. `2` for half resolution). Default: `1`.
 - `--output`: Output dataset directory. Default: `datasets/<first_video_name>`.
 
 **Logging:**
 The script prints real-time extraction stats (IoU %) to the console for every saved frame.
+
+### Image Adjustment (GUI)
+To interactively adjust brightness, contrast, and saturation:
+```bash
+pixi run adjust-images --input /path/to/images --output /path/to/output
+```
+- A GUI window will open showing a preview frame.
+- Adjust sliders to desired values.
+- Press **ENTER** (or `s`) to apply settings to ALL images in the folder and save to output.
+- Press **ESC** (or `q`) to quit without saving.
+
+**Arguments:**
+- `--input`: Input folder containing images (Required).
+- `--output`: Output folder. Defaults to `<input>_corrected`.
+- `--frame`: Index of the frame to use for preview (Default: 0).
+- `--resize_preview`: Resize factor for the preview window (e.g. `0.5` for half size).
 
 ### Arguments
 

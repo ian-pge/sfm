@@ -14,6 +14,7 @@ build-glomap = { cmd = "bash pixi_scripts/build_glomap.sh", depends-on = ["build
 post-install = { depends-on = ["build-glomap", "build-pycolmap", "download-weights"] }
 sfm = {cmd = "python3 scripts/pipeline.py"}
 process-video = {cmd = "python3 scripts/process_video.py"}
+adjust-images = {cmd = "python3 scripts/adjust_images.py"}
 
 [dependencies]
 python = "3.10.*"

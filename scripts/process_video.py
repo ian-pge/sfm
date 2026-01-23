@@ -256,11 +256,11 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
 
 def main():
     parser = argparse.ArgumentParser(description="Extract frames from video")
-    parser.add_argument("--video", nargs='+', required=True, help="Path to input video file(s)")
+    parser.add_argument("--video", nargs='+', required=True, help="Path to input video file(s) or folder(s)")
     
     # Mode args
     parser.add_argument("--adaptive", action="store_true", help="Use adaptive ALIKED+LightGlue geometric feature extraction")
-    parser.add_argument("--overlap", type=float, default=0.60, help="Adaptive: Geometric overlap threshold (0.0 - 1.0). Default 0.60. Lower = more spacing.")
+    parser.add_argument("--overlap", type=float, default=0.80, help="Adaptive: Geometric overlap threshold (0.0 - 1.0). Default 0.80. Lower = more spacing.")
     
     parser.add_argument("--num_frames", type=int, help="Fixed: Number of frames to extract per video")
     parser.add_argument("--downscale", type=int, default=1, help="Downscale factor (e.g. 2 for half size). Default 1 (no downscale).")
@@ -269,7 +269,29 @@ def main():
     args = parser.parse_args()
     
     # Setup Output
-    video_paths = [Path(p).resolve() for p in args.video]
+    raw_video_paths = [Path(p).resolve() for p in args.video]
+    video_paths = []
+    
+    for p in raw_video_paths:
+        if p.is_dir():
+             # Recursively find videos in folder
+             # You can adjust extensions as needed
+             valid_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+             found_videos = sorted([
+                 f for f in p.rglob("*") 
+                 if f.suffix.lower() in valid_extensions and f.is_file()
+             ])
+             video_paths.extend(found_videos)
+             print(f"📂 Found {len(found_videos)} videos in {p.name}")
+        elif p.exists():
+             video_paths.append(p)
+        else:
+             print(f"⚠️ Warning: {p} does not exist")
+             
+    if not video_paths:
+        print("❌ Error: No valid videos found in provided paths.")
+        sys.exit(1)
+
     if args.output:
         output_dir = Path(args.output).resolve()
     else:
