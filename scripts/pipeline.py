@@ -11,6 +11,8 @@ import numpy as np
 import torch
 import trimesh
 import trimesh.path.entities
+import time
+
 
 # Add external scripts to path for SuperGluePretrainedNetwork (just in case, though ALIKED doesn't use it)
 current_dir = Path(__file__).parent
@@ -272,6 +274,8 @@ def run_mapping(
             str(sparse_output),
             "--skip_pruning",
             "0",
+            "--Thresholds.min_inlier_num",
+            "15",
         ]
         subprocess.run(cmd, check=True)
     elif mapper == "colmap":
@@ -628,6 +632,74 @@ def export_reconstruction(sparse_path, output_path):
         traceback.print_exc()
 
 
+def print_summary(
+    start_time,
+    output_path,
+    num_images_initial=0,
+    feature_type="aliked",
+    mapper="glomap",
+):
+    duration = time.time() - start_time
+    minutes = int(duration // 60)
+    seconds = int(duration % 60)
+
+    # Gather stats
+    num_sparse_points = 0
+    num_registered_images = 0
+    num_db_images = 0
+
+    # 1. Check sparse model (final result)
+    # Check both direct 'sparse' or 'sparse/0'
+    model_path = output_path / "sparse"
+    if (
+        not (model_path / "points3D.bin").exists()
+        and (model_path / "0" / "points3D.bin").exists()
+    ):
+        model_path = model_path / "0"
+
+    if (model_path / "points3D.bin").exists():
+        try:
+            recon = reconstruction.pycolmap.Reconstruction(model_path)
+            num_sparse_points = len(recon.points3D)
+            num_registered_images = len(recon.images)
+        except:
+            pass
+
+    # 2. Check Database (input size)
+    db_path = output_path / "database.db"
+    if db_path.exists():
+        try:
+            cx = sqlite3.connect(db_path)
+            c = cx.cursor()
+            c.execute("SELECT count(*) FROM images")
+            num_db_images = c.fetchone()[0]
+            cx.close()
+        except:
+            pass
+
+    print("\n" + "=" * 60)
+    print("✨ RECONSTRUCTION SUMMARY ✨")
+    print("=" * 60)
+    print(f"⏱️  Total Time:       {minutes:02d}m {seconds:02d}s")
+    print(f"📂 Output Directory: {output_path}")
+    print("-" * 60)
+    print(f"📸 Images Processed: {num_db_images} (Init: {num_images_initial})")
+    print(f"✅ Registered:       {num_registered_images} / {num_db_images}")
+    print(f"🌟 3D Points:        {num_sparse_points:,}")
+    print("-" * 60)
+    print(f"🧩 Feature Type:     {feature_type}")
+    print(f"🗺️  Mapper:           {mapper}")
+    print("=" * 60)
+    if num_registered_images == 0:
+        print("❌ Warning: No images were registered. Reconstruction failed.")
+    elif num_registered_images < num_db_images * 0.5:
+        print("⚠️  Warning: Less than 50% of images registered.")
+    else:
+        print("🚀 Success! Reconstruction looks good.")
+    print("\n")
+
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Reconstruction Pipeline using HLOC + GLOMAP"
@@ -695,6 +767,8 @@ def main():
 
     args = parser.parse_args()
 
+    start_time = time.time()
+
     # Handle the --hybrid alias
     if args.hybrid:
         args.matching_type = "hybrid"
@@ -710,6 +784,11 @@ def main():
     dataset_path, images_path, cameras_path, output_path = setup_paths(args)
 
     print(f"Dataset: {dataset_path}")
+    
+    # Count initial images
+    initial_images = sorted([p for p in images_path.iterdir() if p.is_file()])
+    num_initial_images = len(initial_images)
+
     print(f"Output: {output_path}")
 
     feature_path = output_path / "features.h5"
@@ -755,17 +834,26 @@ def main():
             # Updates sparse_output in-place (conceptually, on disk)
             sparse_output = run_normalization(sparse_output, output_path)
 
+        # Export immediately after reconstruction/normalization (before slow undistortion)
+        print("Exporting reconstruction immediately...")
+        export_reconstruction(sparse_output, output_path)
+
         if args.undistort:
             run_undistortion(sparse_output, images_path, output_path)
 
-    if args.stage in ["all", "export"]:
+    if args.stage == "export":
         sparse_output = output_path / "sparse"
         # If we normalize, we should probably make sure export sees the right thing.
         # But since normalization overwrites the sparse model, looking at output/sparse is correct.
         export_reconstruction(sparse_output, output_path)
-        # If we normalize, we should probably make sure export sees the right thing.
-        # But since normalization overwrites the sparse model, looking at output/sparse is correct.
-        export_reconstruction(sparse_output, output_path)
+
+    print_summary(
+        start_time,
+        output_path,
+        num_images_initial=num_initial_images,
+        feature_type=args.feature_type,
+        mapper=args.mapper,
+    )
 
 
 if __name__ == "__main__":
