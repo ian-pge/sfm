@@ -270,6 +270,8 @@ def run_mapping(
             str(images_path),
             "--output_path",
             str(sparse_output),
+            "--skip_pruning",
+            "0",
         ]
         subprocess.run(cmd, check=True)
     elif mapper == "colmap":
