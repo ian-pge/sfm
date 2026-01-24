@@ -427,8 +427,11 @@ class ImageAdjustmentApp:
                 # Update UI safely
                 self.root.after(0, lambda v=completed: self.progress_var.set((v/total) * 100))
                 
-        self.root.after(0, lambda: messagebox.showinfo("Done", f"Saved to {self.output_dir}"))
-        self.root.after(0, self.root.destroy)
+        def on_done():
+            messagebox.showinfo("Done", f"Saved to {self.output_dir}")
+            self.root.destroy()
+            
+        self.root.after(0, on_done)
 
 
 def main():
