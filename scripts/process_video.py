@@ -26,7 +26,7 @@ def get_video_duration(video_path):
         print(f"Error getting duration: {e}")
         sys.exit(1)
 
-def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, start_number=0):
+def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, start_number=0, video_idx=0):
     images_dir = output_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
     
@@ -44,7 +44,9 @@ def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, s
         filters.append(f"scale=iw/{downscale_factor}:-1")
     
     filter_str = ",".join(filters)
-    output_pattern = images_dir / "frame_%05d.png"
+    filter_str = ",".join(filters)
+    output_pattern = images_dir / f"frame_%05d_video_{video_idx}.png"
+    
     
     cmd = [
         "ffmpeg",
@@ -60,11 +62,15 @@ def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, s
     try:
         subprocess.run(cmd, check=True)
         # Count extracted frames
-        current_images = sorted(list(images_dir.glob("frame_*.png")))
+        current_images = sorted(list(images_dir.glob(f"frame_*_video_{video_idx}.png")))
         count = 0
         for img in current_images:
             try:
-                idx = int(img.stem.split("_")[-1])
+                # Expected format: frame_{nnnnn}_video_{idx}.png
+                # getting nnnnn
+                parts = img.stem.split("_")
+                # parts example: ['frame', '00001', 'video', '0']
+                idx = int(parts[1])
                 if idx >= start_number:
                     count += 1
             except:
@@ -74,7 +80,7 @@ def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, s
         print(f"Error running ffmpeg: {e}")
         sys.exit(1)
 
-def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downscale_factor=1, start_number=0):
+def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downscale_factor=1, start_number=0, video_idx=0):
     # 1. Setup Output Directory
     images_dir = output_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
@@ -236,7 +242,7 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
                 else:
                     save_frame = frame_full
                     
-                filename = images_dir / f"frame_{saved_count:05d}.png"
+                filename = images_dir / f"frame_{saved_count:05d}_video_{video_idx}.png"
                 cv2.imwrite(str(filename), save_frame)
                 
                 elapsed_time = frame_count / fps if fps > 0 else 0
@@ -313,7 +319,7 @@ def main():
     print(f"{'='*60}")
 
     
-    for video in video_paths:
+    for video_idx, video in enumerate(video_paths):
         if not video.exists():
             print(f"❌ Error: {video} not found")
             continue
@@ -323,12 +329,12 @@ def main():
 
         
         if args.adaptive:
-            count = extract_precise_geometry(video, output_dir, args.overlap, args.downscale, start_number=global_frame_count)
+            count = extract_precise_geometry(video, output_dir, args.overlap, args.downscale, start_number=global_frame_count, video_idx=video_idx)
         else:
             if args.num_frames is None:
                 print("Error: --num_frames is required for fixed mode")
                 sys.exit(1)
-            count = extract_frames_fixed(video, output_dir, args.num_frames, args.downscale, start_number=global_frame_count)
+            count = extract_frames_fixed(video, output_dir, args.num_frames, args.downscale, start_number=global_frame_count, video_idx=video_idx)
             
         
         # --- Stats Collection ---

@@ -437,10 +437,32 @@ def main():
     parser.add_argument("--output", help="Output directory")
     args = parser.parse_args()
     
-    input_dir = Path(args.input)
+    input_dir = Path(args.input).resolve()
     if not input_dir.exists():
         print(f"Error: {input_dir} not found")
         sys.exit(1)
+
+    # --- AUTO-RENAME LOGIC ---
+    # The user wants the input folder to be 'images_original'
+    parent_dir = input_dir.parent
+    desired_input_name = "images_original"
+    desired_input_path = parent_dir / desired_input_name
+
+    if input_dir.name != desired_input_name:
+        if desired_input_path.exists():
+            print(f"ℹ️  Target input folder '{desired_input_name}' already exists.")
+            print(f"    Switching input from '{input_dir.name}' to '{desired_input_name}'")
+            input_dir = desired_input_path
+        else:
+            print(f"🔄 Renaming input folder '{input_dir.name}' -> '{desired_input_name}'")
+            try:
+                input_dir.rename(desired_input_path)
+                input_dir = desired_input_path
+            except Exception as e:
+                print(f"Error renaming folder: {e}")
+                sys.exit(1)
+    
+    # -------------------------
         
     valid_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tiff"}
     images = sorted([
@@ -455,7 +477,8 @@ def main():
     if args.output:
         output_dir = Path(args.output)
     else:
-        output_dir = input_dir.parent / (input_dir.name + "_corrected")
+        # Default output is sibling 'images' folder
+        output_dir = input_dir.parent / "images"
         
     root = tk.Tk()
     app = ImageAdjustmentApp(root, images, output_dir)

@@ -65,6 +65,9 @@ pixi run process-video --video /path/to/vid1.mp4 /path/to/folder_of_videos/ --ad
 ```
 This extracts frames based on rigorous **Geometric Polygon Overlap** (IoU) rather than simple feature counting. It uses **ALIKED** features and **LightGlue** matching to calculate the exact homography and visual intersection between frames.
 
+**Output Format**:
+Files are named `frame_{number}_video_{index}.png` (e.g., `frame_00001_video_0.png`) to uniquely identify frames from multiple videos.
+
 **Arguments:**
 - `--video`: Path to one or more input video files or folders containing videos (Required).
 - `--adaptive`: Enable the geometric extraction method (ALIKED + LightGlue + Homography).
@@ -87,8 +90,8 @@ pixi run adjust-images --input /path/to/images --output /path/to/output
 - Press **ESC** (or `q`) to quit without saving.
 
 **Arguments:**
-- `--input`: Input folder containing images (Required).
-- `--output`: Output folder. Defaults to `<input>_corrected`.
+- `--input`: Input folder containing images (Required). **Note**: This folder will be automatically renamed to `images_original` if it isn't already.
+- `--output`: Output folder. Defaults to sibling `images` directory.
 - `--frame`: Index of the frame to use for preview (Default: 0).
 - `--resize_preview`: Resize factor for the preview window (e.g. `0.5` for half size).
 
