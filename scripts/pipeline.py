@@ -666,11 +666,13 @@ def analyze_failures(database_path, registered_image_ids):
         # Count verified pairs for each image
         # pair_id = (image_id1 << 31) + image_id2
         image_pair_counts = {id: 0 for id in deleted_ids}
-        c.execute("SELECT pair_id FROM two_view_geometries WHERE rows >= 15")  # Filter for usable matches
+        c.execute(
+            "SELECT pair_id FROM two_view_geometries WHERE rows >= 15"
+        )  # Filter for usable matches
         for (pair_id,) in c.fetchall():
             id2 = pair_id & 2147483647
-            id1 = (pair_id >> 31)
-            
+            id1 = pair_id >> 31
+
             if id1 in image_pair_counts:
                 image_pair_counts[id1] += 1
             if id2 in image_pair_counts:
@@ -679,7 +681,7 @@ def analyze_failures(database_path, registered_image_ids):
         for image_id in sorted(deleted_ids):
             name = all_images[image_id]
             # Use just the basename for cleaner output if name is a path
-            # name = Path(name).name 
+            # name = Path(name).name
             # (User requested "original image name", assuming full relative path or name in DB is desired)
 
             # Get Keypoints count
@@ -777,7 +779,7 @@ def print_summary(
 
     # Run Failure Analysis
     if num_registered_images < num_db_images:
-         analyze_failures(output_path / "database.db", registered_image_ids)
+        analyze_failures(output_path / "database.db", registered_image_ids)
 
 
 def main():
@@ -835,14 +837,14 @@ def main():
     parser.add_argument(
         "--window_size",
         type=int,
-        default=5,
-        help="Number of sequential images to match (default: 5).",
+        default=3,
+        help="Number of sequential images to match (default: 3).",
     )
     parser.add_argument(
         "--retrieval_num",
         type=int,
-        default=15,
-        help="Number of candidates for Global Retrieval (default: 15).",
+        default=30,
+        help="Number of candidates for Global Retrieval (default: 30).",
     )
 
     args = parser.parse_args()
