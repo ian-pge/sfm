@@ -105,7 +105,7 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
 
 - `--dataset`: Path to the dataset root (containing `images/`).
 - `--output`: Directory where results will be saved.
-- `--camera_model`: Camera model for auto-intrinsics (e.g., `PINHOLE`, `SIMPLE_RADIAL`, `OPENCV`). Defaults to `OPENCV` (better for complex lens distortion). Ignored if `cameras.txt` is present.
+- `--camera_model`: Camera model for auto-intrinsics (e.g., `PINHOLE`, `SIMPLE_RADIAL`, `OPENCV`). Defaults to `SIMPLE_RADIAL`. Ignored if `cameras.txt` is present.
 - `--matching_type`: Strategy for pairing images:
   - `hybrid` (default): Combines `sequential` and `retrieval` matching. Best for video datasets where loop closure is needed.
   - `sequential`: Matches consecutive frames. Good for video.
