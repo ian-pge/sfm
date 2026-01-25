@@ -635,6 +635,78 @@ def export_reconstruction(sparse_path, output_path):
         traceback.print_exc()
 
 
+def analyze_failures(database_path, registered_image_ids):
+    if not database_path.exists():
+        return
+
+    print("\n" + "=" * 60)
+    print("📉 FAILURE ANALYSIS")
+    print("=" * 60)
+
+    try:
+        conn = sqlite3.connect(database_path)
+        c = conn.cursor()
+
+        # Get all images
+        c.execute("SELECT image_id, name FROM images")
+        all_images = {row[0]: row[1] for row in c.fetchall()}
+
+        # Identify deleted (unregistered) images
+        deleted_ids = set(all_images.keys()) - set(registered_image_ids)
+
+        if not deleted_ids:
+            print("🎉 No frames were deleted! (100% registration)")
+            conn.close()
+            return
+
+        print(f"Found {len(deleted_ids)} deleted frames. Analyzing reasons...\n")
+        print(f"{'Image Name':<50} | {'KPs':<8} | {'Pairs':<6} | {'Reason'}")
+        print("-" * 90)
+
+        # Count verified pairs for each image
+        # pair_id = (image_id1 << 31) + image_id2
+        image_pair_counts = {id: 0 for id in deleted_ids}
+        c.execute("SELECT pair_id FROM two_view_geometries WHERE rows >= 15")  # Filter for usable matches
+        for (pair_id,) in c.fetchall():
+            id2 = pair_id & 2147483647
+            id1 = (pair_id >> 31)
+            
+            if id1 in image_pair_counts:
+                image_pair_counts[id1] += 1
+            if id2 in image_pair_counts:
+                image_pair_counts[id2] += 1
+
+        for image_id in sorted(deleted_ids):
+            name = all_images[image_id]
+            # Use just the basename for cleaner output if name is a path
+            # name = Path(name).name 
+            # (User requested "original image name", assuming full relative path or name in DB is desired)
+
+            # Get Keypoints count
+            c.execute("SELECT rows FROM keypoints WHERE image_id=?", (image_id,))
+            res = c.fetchone()
+            num_kps = res[0] if res else 0
+
+            num_pairs = image_pair_counts.get(image_id, 0)
+
+            reason = "Unknown"
+            if num_kps < 100:
+                reason = "Low Keypoints (<100)"
+            elif num_pairs == 0:
+                reason = "No Valid Pairs"
+            elif num_pairs < 3:
+                reason = "Few Matches"
+            else:
+                reason = "Structure/Geometry Fail"
+
+            print(f"{name:<50} | {num_kps:<8} | {num_pairs:<6} | {reason}")
+
+        conn.close()
+    except Exception as e:
+        print(f"Error analyzing database: {e}")
+    print("-" * 90)
+
+
 def print_summary(
     start_time,
     output_path,
@@ -650,6 +722,7 @@ def print_summary(
     num_sparse_points = 0
     num_registered_images = 0
     num_db_images = 0
+    registered_image_ids = set()
 
     # 1. Check sparse model (final result)
     # Check both direct 'sparse' or 'sparse/0'
@@ -665,6 +738,7 @@ def print_summary(
             recon = reconstruction.pycolmap.Reconstruction(model_path)
             num_sparse_points = len(recon.points3D)
             num_registered_images = len(recon.images)
+            registered_image_ids = set(recon.images.keys())
         except:
             pass
 
@@ -700,6 +774,10 @@ def print_summary(
     else:
         print("🚀 Success! Reconstruction looks good.")
     print("\n")
+
+    # Run Failure Analysis
+    if num_registered_images < num_db_images:
+         analyze_failures(output_path / "database.db", registered_image_ids)
 
 
 def main():
@@ -763,8 +841,8 @@ def main():
     parser.add_argument(
         "--retrieval_num",
         type=int,
-        default=30,
-        help="Number of candidates for Global Retrieval (default: 30). Increase for repetitive scenes.",
+        default=15,
+        help="Number of candidates for Global Retrieval (default: 15).",
     )
 
     args = parser.parse_args()
