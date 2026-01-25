@@ -43,6 +43,7 @@ suitesparse = ">=5.10"
 ffmpeg = ">=6.0"
 numpy = "<2.0"
 h5py = ">=3.8"
+scikit-learn = "*"
 trimesh = ">=4.0"
 # pycolmap moved to pypi
 pillow = ">=10.0"
@@ -69,6 +70,7 @@ libjpeg-turbo = { version = "*", channel = "conda-forge" }
 setuptools = ">=80.9.0,<81"
 wheel = ">=0.45.1,<0.46"
 tqdm = ">=4.67.1,<5"
+safetensors = ">=0.7.0,<0.8"
 
 [pypi-dependencies]
 dual-quaternions = ">=0.4.0, <0.5"

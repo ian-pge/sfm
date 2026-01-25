@@ -110,7 +110,7 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
   - `hybrid` (default): Combines `sequential` and `retrieval` matching. Best for video datasets where loop closure is needed.
   - `sequential`: Matches consecutive frames. Good for video.
   - `exhaustive`: Matches every image with every other image. Good for small datasets.
-  - `retrieval`: Uses global descriptors (NetVLAD) to find overlapping pairs. Good for large datasets.
+  - `retrieval`: Uses global descriptors (Megaloc) to find overlapping pairs. Good for large datasets.
 - `--window_size`: Number of adjacent frames to match in sequential/hybrid mode (Default: 10). Increase to 20+ for high-FPS video.
 - `--retrieval_num`: Number of loop closure candidates to check in retrieval/hybrid mode (Default: 30). Increase for repetitive scenes.
 - `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
