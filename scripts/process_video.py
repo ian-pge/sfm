@@ -336,9 +336,19 @@ def main():
     raw_video_paths = [Path(p).resolve() for p in args.video]
     video_paths = []
     for p in raw_video_paths:
-        if p.exists(): video_paths.append(p)
-             
-    if not video_paths: sys.exit(1)
+        if p.is_dir():
+             extensions = {".mp4", ".avi", ".mov", ".mkv", ".MP4", ".AVI", ".MOV", ".MKV"}
+             for ext in extensions:
+                 video_paths.extend(list(p.glob(f"*{ext}")))
+        elif p.exists(): 
+            video_paths.append(p)
+    
+    # Sort and Deduplicate
+    video_paths = sorted(list(set(video_paths)))
+            
+    if not video_paths: 
+        print(f"Error: Could not open video {raw_video_paths[0] if raw_video_paths else ''}")
+        sys.exit(1)
 
     if args.output:
         output_dir = Path(args.output).resolve()
