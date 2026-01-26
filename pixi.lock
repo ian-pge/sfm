@@ -448,10 +448,13 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstandard-0.25.0-py310h139afa4_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_6.conda
       - pypi: https://files.pythonhosted.org/packages/1a/39/47f9197bdd44df24d67ac8893641e16f386c984a0619ef2ee4c51fbbc019/beautifulsoup4-4.14.3-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b8/46/a99fe873eb3d120833b6e52ad7d7a4190a60bf2b9480f5a17384db65b781/dual_quaternions-0.4.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ec/f9/7f9263c5695f4bd0023734af91bedb2ff8209e8de6ead162f35d8dc762fd/flask-3.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/87/21/35dd0a0b7428bd67b12b358d7b4277f693493a3839b071d540a4c8357b78/gdown-5.2.1-py3-none-any.whl
       - pypi: git+https://github.com/cvg/Hierarchical-Localization.git#c13273bd0ecc2917a35910fd843712a1c6243193
       - pypi: https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/04/96/92447566d16df59b2a776c0fb82dbc4d9e07cd95062562af01e408583fc4/itsdangerous-2.2.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/79/d4/e9bd12b7b4cbd23b4dfb47e744ee1fa54d6d9c3c9bc406ec86c1be8c8307/kornia-0.8.2-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f5/5a/907580d1e573bc1862557cb70d1f1888bde1b33240d15cd10ff06c93a57c/kornia_rs-0.1.10-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: git+https://github.com/cvg/LightGlue.git#746fac2c042e05d1865315b1413419f1c1e7ba55
@@ -472,6 +475,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/46/2c/1462b1d0a634697ae9e55b3cecdcb64788e8b7d63f54d923fcd0bb140aed/soupsieve-2.8.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/95/01/6ffc2037b91e628f07117002fd89b913a015c85364a8237df8dfaec8f3d8/ultralytics-8.4.7-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7f/c7/fb42228bb05473d248c110218ffb8b1ad2f76728ed8699856e5af21112ad/ultralytics_thop-2.0.18-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ad/e4/8d97cca767bcc1be76d16fb76951608305561c6e056811587f36cb1316a8/werkzeug-3.1.5-py3-none-any.whl
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-7_kmp_llvm.conda
   build_number: 7
@@ -931,6 +935,11 @@ packages:
   purls: []
   size: 12630
   timestamp: 1660094595212
+- pypi: https://files.pythonhosted.org/packages/10/cb/f2ad4230dc2eb1a74edf38f1a38b9b52277f75bef262d8908e60d957e13c/blinker-1.9.0-py3-none-any.whl
+  name: blinker
+  version: 1.9.0
+  sha256: ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc
+  requires_python: '>=3.9'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/boost-1.84.0-hb7f781d_7.conda
   sha256: 2acf2988797083f2068f2be826b8a302aeb47ab8691081314e81375e57cf2628
   md5: 3b4ef5f6c0b05eff3913f6bf04f5ca45
@@ -1566,6 +1575,21 @@ packages:
   - pkg:pypi/filelock?source=hash-mapping
   size: 18661
   timestamp: 1768022315929
+- pypi: https://files.pythonhosted.org/packages/ec/f9/7f9263c5695f4bd0023734af91bedb2ff8209e8de6ead162f35d8dc762fd/flask-3.1.2-py3-none-any.whl
+  name: flask
+  version: 3.1.2
+  sha256: ca1d8112ec8a6158cc29ea4858963350011b5c846a414cdb7a954aa9e967d03c
+  requires_dist:
+  - blinker>=1.9.0
+  - click>=8.1.3
+  - importlib-metadata>=3.6.0 ; python_full_version < '3.10'
+  - itsdangerous>=2.2.0
+  - jinja2>=3.1.2
+  - markupsafe>=2.1.1
+  - werkzeug>=3.1.0
+  - asgiref>=3.2 ; extra == 'async'
+  - python-dotenv ; extra == 'dotenv'
+  requires_python: '>=3.9'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/fmt-10.2.1-h00ab1b0_0.conda
   sha256: 7b9ba098a3661e023c3555e01554354ac4891af8f8998e85f0fcbfdac79fc0d4
   md5: 35ef8bc24bd34074ebae3c943d551728
@@ -2317,6 +2341,11 @@ packages:
   - pkg:pypi/ipywidgets?source=hash-mapping
   size: 114376
   timestamp: 1762040524661
+- pypi: https://files.pythonhosted.org/packages/04/96/92447566d16df59b2a776c0fb82dbc4d9e07cd95062562af01e408583fc4/itsdangerous-2.2.0-py3-none-any.whl
+  name: itsdangerous
+  version: 2.2.0
+  sha256: c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef
+  requires_python: '>=3.8'
 - conda: https://conda.anaconda.org/conda-forge/linux-64/jasper-4.2.8-he3c4edf_0.conda
   sha256: 0e919ec86d980901d8cbb665e91f5e9bddb5ff662178f25aed6d63f999fd9afc
   md5: a04073db11c2c86c555fb088acc8f8c1
@@ -6370,6 +6399,14 @@ packages:
   - pkg:pypi/wcwidth?source=hash-mapping
   size: 33670
   timestamp: 1758622418893
+- pypi: https://files.pythonhosted.org/packages/ad/e4/8d97cca767bcc1be76d16fb76951608305561c6e056811587f36cb1316a8/werkzeug-3.1.5-py3-none-any.whl
+  name: werkzeug
+  version: 3.1.5
+  sha256: 5111e36e91086ece91f93268bb39b4a35c1e6f1feac762c9c822ded0a4e322dc
+  requires_dist:
+  - markupsafe>=2.1.1
+  - watchdog>=2.3 ; extra == 'watchdog'
+  requires_python: '>=3.9'
 - conda: https://conda.anaconda.org/conda-forge/noarch/wheel-0.45.1-pyhd8ed1ab_1.conda
   sha256: 1b34021e815ff89a4d902d879c3bd2040bc1bd6169b32e9427497fa05c55f1ce
   md5: 75cb7132eb58d97896e173ef12ac9986

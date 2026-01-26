@@ -96,6 +96,7 @@ pypose = "*"
 kornia = "*"
 ultralytics = "*"
 pysocks = "*"
+flask = "*"
 
 
 

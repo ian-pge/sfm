@@ -802,7 +802,7 @@ def main():
         description="Reconstruction Pipeline using HLOC + GLOMAP"
     )
     parser.add_argument(
-        "--dataset", required=True, help="Path to dataset containing 'images' folder"
+        "--dataset", required=False, help="Path to dataset containing 'images' folder. Required if --video is not provided."
     )
     parser.add_argument("--output", default="output", help="Path to output directory")
     parser.add_argument(
@@ -811,6 +811,7 @@ def main():
         default="all",
         help="Pipeline stage to run",
     )
+    # ... (other args kept same implicitly by only replacing affected block if possible, but here we replace block)
     parser.add_argument(
         "--camera_model",
         default="SIMPLE_RADIAL",
@@ -861,8 +862,90 @@ def main():
         default=50,
         help="Number of candidates for Global Retrieval (default: 30).",
     )
+    # Video Processing Arguments
+    parser.add_argument(
+        "--video",
+        nargs="+",
+        help="Path to video file(s) or folder containing videos to process.",
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Enable web streaming during video extraction.",
+    )
 
     args = parser.parse_args()
+    
+    # Validation
+    if not args.dataset and not args.video:
+        parser.error("--dataset or --video is required.")
+
+    # --- VIDEO EXTRACTION LOGIC ---
+    if args.video:
+        # Resolve video paths
+        video_inputs = [Path(p) for p in args.video]
+        final_video_paths = []
+        for p in video_inputs:
+             if p.is_dir():
+                 # glob videos
+                 extensions = {".mp4", ".avi", ".mov", ".mkv"}
+                 for ext in extensions:
+                     final_video_paths.extend(list(p.glob(f"*{ext}")))
+                     # Case insensitive check approx
+                     final_video_paths.extend(list(p.glob(f"*{ext.upper()}")))
+             elif p.exists():
+                 final_video_paths.append(p)
+        
+        # Deduplicate
+        final_video_paths = sorted(list(set(final_video_paths)))
+        
+        if not final_video_paths:
+             print("❌ Error: No video files found in provided paths.")
+             sys.exit(1)
+
+        print(f"🎥 Detected {len(final_video_paths)} Video Input(s)")
+        
+        # Define output path for derived dataset
+        project_root = Path(__file__).parent.parent
+        # If dataset not provided, auto-name it based on first source
+        if not args.dataset:
+            # If input was a single folder, name dataset after folder?
+            if len(video_inputs) == 1 and video_inputs[0].is_dir():
+                 dataset_name = video_inputs[0].name
+            else:
+                 dataset_name = final_video_paths[0].stem
+            
+            extracted_dataset_path = project_root / "datasets" / dataset_name
+        else:
+            extracted_dataset_path = Path(args.dataset)
+        
+        print(f"📂 Pipeline Dataset Directory: {extracted_dataset_path}")
+        
+        # Run process_video.py
+        cmd = [
+            sys.executable,
+            str(Path(__file__).parent / "process_video.py"),
+            "--video"
+        ]
+        # Append all video paths
+        for p in final_video_paths:
+            cmd.append(str(p))
+            
+        cmd.extend(["--output", str(extracted_dataset_path)])
+        
+        if args.stream:
+            cmd.append("--stream")
+        
+        print(f"🚀 Running extraction command...")
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Video extraction failed with exit code {e.returncode}")
+            sys.exit(e.returncode)
+            
+        # UPDATE dataset argument to point to the new folder
+        args.dataset = str(extracted_dataset_path)
+    # ------------------------------
 
     start_time = time.time()
 
