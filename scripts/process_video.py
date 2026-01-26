@@ -18,42 +18,6 @@ from tqdm.auto import tqdm
 import time
 from ultralytics import YOLO
 
-# --- Streaming Setup ---
-from flask import Flask, Response
-import threading
-
-output_frame = None
-stream_lock = threading.Lock()
-app = Flask(__name__)
-
-@app.route("/")
-def index():
-    return "<html><body style='background:black; color:white; text-align:center;'><h1>Smart Extraction Stream</h1><img src='/video_feed' style='max-width:100%; border: 2px solid cyan;'></body></html>"
-
-def generate():
-    global output_frame, stream_lock
-    while True:
-        with stream_lock:
-            if output_frame is None:
-                time.sleep(0.01)
-                continue
-            # Encode
-            (flag, encodedImage) = cv2.imencode(".jpg", output_frame)
-            if not flag:
-                continue
-        # Yield
-        yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n')
-        time.sleep(0.03) # Cap at ~30fps for browser
-
-@app.route("/video_feed")
-def video_feed():
-    return Response(generate(), mimetype = "multipart/x-mixed-replace; boundary=frame")
-
-def start_stream_server(port=9090):
-    print(f"📡 Process Video Stream running at http://0.0.0.0:{port}")
-    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
-# -----------------------
-
 def get_video_duration(video_path):
     cmd = [
         "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -70,7 +34,7 @@ def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, s
     # This function is not the main focus of your request.
     pass 
 
-def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downscale_factor=1, start_number=0, video_idx=0, use_yolo=False, show_gui=False, enable_stream=False):
+def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downscale_factor=1, start_number=0, video_idx=0, use_yolo=False, show_gui=False):
     images_dir = output_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
     
@@ -345,11 +309,6 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
                     cv2.imshow("Result", vis_img)
                     cv2.waitKey(1)
                 
-                # Update Stream
-                if enable_stream:
-                    with stream_lock:
-                        output_frame = vis_img.copy()
-
             frame_count += 1
             pbar.update(1)
         
@@ -367,7 +326,6 @@ def main():
     parser.set_defaults(adaptive=True, yolo=True)
     
     parser.add_argument("--gui", action="store_true", help="Show GUI")
-    parser.add_argument("--stream", action="store_true", help="Enable Web Stream (http://localhost:9090)")
     parser.add_argument("--overlap", type=float, default=0.80, help="Overlap threshold")
     parser.add_argument("--num_frames", type=int, help="Fixed mode count")
     parser.add_argument("--downscale", type=int, default=1, help="Downscale")
@@ -392,13 +350,6 @@ def main():
     global_frame_count = 0
     all_stats_summary = []
     
-    # Start Stream Server
-    if args.stream:
-        t = threading.Thread(target=start_stream_server, args=(9090,))
-        t.daemon = True
-        t.start()
-        print("🌐 Web Stream enabled! Open browser at http://localhost:9090")
-    
     for video_idx, video in enumerate(video_paths):
         print(f"\n🎞️  --- Processing {video.name} ---")
         start_time = time.time()
@@ -408,7 +359,7 @@ def main():
             count, v_stats = extract_precise_geometry(
                 video, output_dir, args.overlap, args.downscale, 
                 start_number=global_frame_count, video_idx=video_idx, 
-                use_yolo=args.yolo, show_gui=args.gui, enable_stream=args.stream
+                use_yolo=args.yolo, show_gui=args.gui
             )
         else:
             if args.num_frames is None:
