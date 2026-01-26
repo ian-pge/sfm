@@ -17,6 +17,7 @@ process-video = {cmd = "python3 scripts/process_video.py"}
 process-video-dpvo = {cmd = "python3 scripts/process_video_dpvo.py"}
 visualize-trajectory = {cmd = "python3 scripts/visualize_trajectory.py"}
 adjust-images = {cmd = "python3 scripts/adjust_images.py"}
+label-images = {cmd = "python3 scripts/label_images_gui.py"}
 
 [dependencies]
 python = "3.10.*"
