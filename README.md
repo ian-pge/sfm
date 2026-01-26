@@ -58,31 +58,36 @@ Run the pipeline using `scripts/pipeline.py`:
 pixi run sfm
 ```
 
-### Video Processing (Optional)
-To create a dataset from video files:
-```bash
-pixi run process-video --video /path/to/vid1.mp4 /path/to/folder_of_videos/ --adaptive
-```
-This extracts frames based on rigorous **Geometric Polygon Overlap** (IoU) rather than simple feature counting. It uses **ALIKED** features and **LightGlue** matching to calculate the exact homography and visual intersection between frames.
-
-### DPVO Video Processing (Deep Learning VO)
-Alternatively, you can use **DPVO (Deep Patch Visual Odometry)** for keyframe extraction. This is often faster and uses a full SLAM backend to select frames.
+### Video Processing (Smart Extraction)
+To create a high-quality dataset from video files, use `scripts/process_video.py`. This script uses a smart adaptive strategy to extract frames based on geometric overlap and content filtering.
 
 ```bash
-pixi run process-video-dpvo --video /path/to/video.mp4 --overlap 0.9
+pixi run process-video --video /path/to/vid1.mp4 --gui
 ```
 
-**Features:**
-- **Full Trajectory Optimization**: Uses the entire video context to select frames.
-- **Geometric Filtering**: Filters redundant frames using 3D pose projection and IoU overlap (via `--overlap`).
-- **GPU Accelerated**: Runs fully on CUDA (requires valid setup).
+**Key Features:**
+1.  **Geometric Overlap (Adaptive)**: Uses **ALIKED** features + **LightGlue** matching to calculate Homography and IoU (Intersection over Union). It only saves a new frame if the overlap with the previous frame drops below a threshold (default 0.8).
+2.  **YOLOv8 Segmentation**: Automatically detects cars using **YOLOv8 Medium Segmentation** (`yolov8m-seg`). It filters feature points to ensure tracking is focused **only on the car**, ignoring background movement (trees, other cars).
+3.  **Real-time Visualization**: The `--gui` flag opens a window showing:
+    -   Red overlay on the segmented car.
+    -   Keypoints (Red) and Matched Inliers (Green).
+    -   Live stats (Overlap %, Stride).
+
+**Arguments:**
 
 | Argument | Description | Default |
 | :--- | :--- | :--- |
 | `--video` | Input video file(s) or folder(s). | Required |
-| `--overlap` | Geometric Overlap Threshold (0.0-1.0). Save if IoU < Threshold. | `0.9` |
-| `--stride` | Tracking stride (skip frames for speed). | `1` |
-| `--model` | Path to DPVO .pth model. | `third_party/DPVO/dpvo.pth` |
+| `--gui` | Show real-time visualization window. | `False` |
+| `--overlap` | Geometric Overlap Threshold (0.0-1.0). Save if IoU < Threshold. | `0.80` |
+| `--downscale` | Downscale factor for *saved* images (e.g., 2 = half size). | `1` |
+| `--no-adaptive` | Disable adaptive mode (use fixed frame count). | `False` |
+| `--no-yolo` | Disable YOLO segmentation. | `False` |
+| `--num_frames` | (Fixed Mode Only) Number of frames to extract. | `None` |
+
+**Defaults:**
+By default, the script runs with **`--adaptive`** and **`--yolo`** enabled, and an **`--overlap`** of **0.8**. This configuration is optimized for robust car reconstruction.
+
 
 ### Visualization (Rerun)
 To see the trajectory in 3D:

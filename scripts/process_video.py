@@ -339,8 +339,12 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
 def main():
     parser = argparse.ArgumentParser(description="Extract frames from video")
     parser.add_argument("--video", nargs='+', required=True, help="Video file(s)")
-    parser.add_argument("--adaptive", action="store_true", help="Use adaptive ALIKED+LightGlue")
-    parser.add_argument("--yolo", action="store_true", help="Use YOLOv8-Medium Segmentation")
+    
+    # Defaults: Adaptive=True, Yolo=True, Overlap=0.8
+    parser.add_argument("--no-adaptive", action="store_false", dest="adaptive", help="Disable adaptive mode")
+    parser.add_argument("--no-yolo", action="store_false", dest="yolo", help="Disable YOLO segmentation")
+    parser.set_defaults(adaptive=True, yolo=True)
+    
     parser.add_argument("--gui", action="store_true", help="Show GUI")
     parser.add_argument("--overlap", type=float, default=0.80, help="Overlap threshold")
     parser.add_argument("--num_frames", type=int, help="Fixed mode count")
