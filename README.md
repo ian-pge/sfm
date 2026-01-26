@@ -84,6 +84,15 @@ pixi run process-video-dpvo --video /path/to/video.mp4 --overlap 0.9
 | `--stride` | Tracking stride (skip frames for speed). | `1` |
 | `--model` | Path to DPVO .pth model. | `third_party/DPVO/dpvo.pth` |
 
+### Visualization (Rerun)
+To see the trajectory in 3D:
+```bash
+pixi run visualize-trajectory --input datasets/<video_name>/trajectory_video_0.txt
+```
+This starts a web viewer at `http://localhost:9090`.
+
+**⚠️ Important**: You must forward **Port 9876** (WebSocket data) in addition to Port 9090 for the viewer to receive data.
+
 ---
 
 

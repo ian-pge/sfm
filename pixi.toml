@@ -15,6 +15,7 @@ post-install = { depends-on = ["build-glomap", "build-pycolmap", "download-weigh
 sfm = {cmd = "python3 scripts/pipeline.py"}
 process-video = {cmd = "python3 scripts/process_video.py"}
 process-video-dpvo = {cmd = "python3 scripts/process_video_dpvo.py"}
+visualize-trajectory = {cmd = "python3 scripts/visualize_trajectory.py"}
 adjust-images = {cmd = "python3 scripts/adjust_images.py"}
 
 [dependencies]
@@ -68,6 +69,8 @@ pytorch-scatter = "*"
 yacs = "*"
 einops = "*"
 numba = "*"
+matplotlib = "*"
+rerun-sdk = ">=0.15"
 
 
 
