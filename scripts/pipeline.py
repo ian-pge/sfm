@@ -8,11 +8,11 @@ import sys
 import time
 from pathlib import Path
 
+import h5py
 import numpy as np
 import torch
 import trimesh
 import trimesh.path.entities
-import h5py
 
 # Add external scripts to path for SuperGluePretrainedNetwork (just in case, though ALIKED doesn't use it)
 current_dir = Path(__file__).parent
@@ -135,16 +135,19 @@ def run_matching(
             global_conf, images_path, feature_path=global_features_path
         )
 
-        import bucket_matcher # Dynamic import unless I put it top-level
+        import bucket_matcher  # Dynamic import unless I put it top-level
+
         pairs_ret = output_path / "pairs_retrieval.txt"
-        
+
         # Check if we have labeled frames
         images_all = list(images_path.iterdir())
         suffixes = ["_fl", "_fr", "_bl", "_br"]
         has_labels = any(p.stem.endswith(tuple(suffixes)) for p in images_all)
-        
+
         if has_labels:
-            print(f"ℹ️  Labeled frames detected. Using FILTERED bucket matching (NetVLAD + Buckets).")
+            print(
+                f"ℹ️  Labeled frames detected. Using FILTERED bucket matching (NetVLAD + Buckets)."
+            )
             bucket_matcher.generate_bucketed_retrieval_pairs(
                 global_features_path, pairs_ret, num_matched=num_matched
             )
@@ -858,7 +861,7 @@ def main():
     parser.add_argument(
         "--retrieval_num",
         type=int,
-        default=50,
+        default=20,
         help="Number of candidates for Global Retrieval (default: 30).",
     )
 
