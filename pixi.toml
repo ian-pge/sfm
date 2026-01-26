@@ -1,6 +1,6 @@
 [workspace]
 authors = ["ian <ian.page38@gmail.com>"]
-channels = ["nvidia", "conda-forge", "pytorch"]
+channels = ["nvidia", "conda-forge", "pytorch", "pyg"]
 name = "workspace"
 platforms = ["linux-64"]
 version = "0.1.0"
@@ -14,6 +14,7 @@ build-glomap = { cmd = "bash pixi_scripts/build_glomap.sh", depends-on = ["build
 post-install = { depends-on = ["build-glomap", "build-pycolmap", "download-weights"] }
 sfm = {cmd = "python3 scripts/pipeline.py"}
 process-video = {cmd = "python3 scripts/process_video.py"}
+process-video-dpvo = {cmd = "python3 scripts/process_video_dpvo.py"}
 adjust-images = {cmd = "python3 scripts/adjust_images.py"}
 
 [dependencies]
@@ -63,6 +64,13 @@ cuda-cudart-static = "12.1.*"
 libcublas-dev = "12.1.*"
 libcusolver-dev = "*"
 libcusparse-dev = "*"
+pytorch-scatter = "*"
+yacs = "*"
+einops = "*"
+numba = "*"
+
+
+
 openimageio = "*"
 glew = "*"
 freeimage = "*"
@@ -80,3 +88,5 @@ pillow-heif = ">=1.1.1, <2"
 hloc = { git = "https://github.com/cvg/Hierarchical-Localization.git" }
 lightglue = { git = "https://github.com/cvg/LightGlue.git" }
 # pycolmap = ">=0.6"
+pypose = "*"
+kornia = "*"

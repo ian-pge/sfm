@@ -112,7 +112,7 @@ def run_matching(
         pairs_from_exhaustive.main(pairs_path, features=feature_path)
     elif matching_type == "retrieval":
         print(f"Extracting global features for retrieval...")
-        global_conf = extract_features.confs["megaloc"]
+        global_conf = extract_features.confs["netvlad"]
         global_features_path = output_path / "global_features.h5"
         extract_features.main(
             global_conf, images_path, feature_path=global_features_path
@@ -128,7 +128,7 @@ def run_matching(
         generate_sequential_pairs(images_path, pairs_seq, window_size=window_size)
 
         print("Generating retrieval pairs...")
-        global_conf = extract_features.confs["megaloc"]
+        global_conf = extract_features.confs["netvlad"]
         global_features_path = output_path / "global_features.h5"
         extract_features.main(
             global_conf, images_path, feature_path=global_features_path
@@ -837,13 +837,13 @@ def main():
     parser.add_argument(
         "--window_size",
         type=int,
-        default=5,
+        default=10,
         help="Number of sequential images to match (default: 3).",
     )
     parser.add_argument(
         "--retrieval_num",
         type=int,
-        default=50,
+        default=20,
         help="Number of candidates for Global Retrieval (default: 30).",
     )
 

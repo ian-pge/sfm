@@ -39,3 +39,26 @@ if [ ! -d "scripts/external/SuperGluePretrainedNetwork" ]; then
 else
     echo "✅ SuperGluePretrainedNetwork already exists"
 fi
+
+# DPVO (Third Party)
+mkdir -p third_party
+if [ ! -d "third_party/DPVO" ]; then
+    echo "Cloning DPVO..."
+    git clone https://github.com/princeton-vl/DPVO.git third_party/DPVO
+    # Install in editable mode
+    echo "Installing DPVO..."
+    cd third_party/DPVO
+    pip install -e .
+    cd ../..
+else
+    echo "✅ DPVO already exists"
+fi
+
+# DPVO Weights
+if [ ! -f "third_party/DPVO/dpvo.pth" ]; then
+    echo "Downloading DPVO Weights..."
+    wget -q -O "third_party/DPVO/dpvo.pth" \
+      "https://github.com/princeton-vl/DPVO/releases/download/v1.0/dpvo.pth" && echo "✅ DPVO Weights Downloaded"
+else
+    echo "✅ DPVO Weights already exist"
+fi

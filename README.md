@@ -65,6 +65,28 @@ pixi run process-video --video /path/to/vid1.mp4 /path/to/folder_of_videos/ --ad
 ```
 This extracts frames based on rigorous **Geometric Polygon Overlap** (IoU) rather than simple feature counting. It uses **ALIKED** features and **LightGlue** matching to calculate the exact homography and visual intersection between frames.
 
+### DPVO Video Processing (Deep Learning VO)
+Alternatively, you can use **DPVO (Deep Patch Visual Odometry)** for keyframe extraction. This is often faster and uses a full SLAM backend to select frames.
+
+```bash
+pixi run process-video-dpvo --video /path/to/video.mp4 --overlap 0.9
+```
+
+**Features:**
+- **Full Trajectory Optimization**: Uses the entire video context to select frames.
+- **Geometric Filtering**: Filters redundant frames using 3D pose projection and IoU overlap (via `--overlap`).
+- **GPU Accelerated**: Runs fully on CUDA (requires valid setup).
+
+| Argument | Description | Default |
+| :--- | :--- | :--- |
+| `--video` | Input video file(s) or folder(s). | Required |
+| `--overlap` | Geometric Overlap Threshold (0.0-1.0). Save if IoU < Threshold. | `0.9` |
+| `--stride` | Tracking stride (skip frames for speed). | `1` |
+| `--model` | Path to DPVO .pth model. | `third_party/DPVO/dpvo.pth` |
+
+---
+
+
 **Output Format**:
 Files are named `frame_{number}_video_{index}.png` (e.g., `frame_00001_video_0.png`) to uniquely identify frames from multiple videos.
 
@@ -110,7 +132,7 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
   - `hybrid` (default): Combines `sequential` and `retrieval` matching. Best for video datasets where loop closure is needed.
   - `sequential`: Matches consecutive frames. Good for video.
   - `exhaustive`: Matches every image with every other image. Good for small datasets.
-  - `retrieval`: Uses global descriptors (Megaloc) to find overlapping pairs. Good for large datasets.
+  - `retrieval`: Uses global descriptors (NetVLAD) to find overlapping pairs. Good for large datasets.
 - `--window_size`: Number of adjacent frames to match in sequential/hybrid mode (Default: 10). Increase to 20+ for high-FPS video.
 - `--retrieval_num`: Number of loop closure candidates to check in retrieval/hybrid mode (Default: 30). Increase for repetitive scenes.
 - `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
