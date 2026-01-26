@@ -88,7 +88,9 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
 
     if show_gui:
         cv2.startWindowThread()
-        cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
+        # Small floating window (fits image size exactly, usually 640x480)
+        cv2.namedWindow("Result", cv2.WINDOW_AUTOSIZE)
+        cv2.resizeWindow("Result", w_proc, h_proc)
 
     print(f"🚀 --- STARTING SMART EXTRACTION ({video_path.name}) ---")
     
