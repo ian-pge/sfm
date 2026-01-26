@@ -89,15 +89,6 @@ pixi run process-video --video /path/to/vid1.mp4 --gui
 By default, the script runs with **`--adaptive`** and **`--yolo`** enabled, and an **`--overlap`** of **0.8**. This configuration is optimized for robust car reconstruction.
 
 
-### Visualization (Rerun)
-To see the trajectory in 3D:
-```bash
-pixi run visualize-trajectory --input datasets/<video_name>/trajectory_video_0.txt
-```
-This starts a web viewer at `http://localhost:9090`.
-
-**⚠️ Important**: You must forward **Port 9876** (WebSocket data) in addition to Port 9090 for the viewer to receive data.
-
 ---
 
 
