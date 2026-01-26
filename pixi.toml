@@ -95,4 +95,7 @@ lightglue = { git = "https://github.com/cvg/LightGlue.git" }
 pypose = "*"
 kornia = "*"
 ultralytics = "*"
+pysocks = "*"
+
+
 
