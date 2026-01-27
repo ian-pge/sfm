@@ -147,6 +147,7 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
 - `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
 - `--mask`: (Optional) Use masks for ALIKED feature extraction. Masks should be in `masks/window` and match image filenames. Areas with mask > 0.5 are ignored.
 - `--keypoints_viz`: (Optional) Save visualization images (image + mask + keypoints) to `output/keypoints_viz`. Useful for debugging masks.
+- `--resize_max`: (Optional) Set maximum image dimension for feature extraction (default: 1024). Use higher values (e.g. 1600, 2048) for less downscaling.
 
 ### Gaussian Splatting Workflow
 

@@ -121,7 +121,7 @@ def setup_aliked_masking():
     print("✅ ALIKED monkey-patched for masking support.")
 
 
-def run_feature_extraction(images_path, output_path, feature_type="aliked", use_mask=False, dataset_path=None, keypoints_viz=False):
+def run_feature_extraction(images_path, output_path, feature_type="aliked", use_mask=False, dataset_path=None, keypoints_viz=False, resize_max=None):
     config = FEATURE_CONFIGS[feature_type]
     feature_conf = extract_features.confs[config["feature"]]
     feature_path = output_path / "features.h5"
@@ -130,6 +130,7 @@ def run_feature_extraction(images_path, output_path, feature_type="aliked", use_
     
     # If masking OR visualization is enabled and we are using ALIKED
     if (use_mask or keypoints_viz) and feature_type == "aliked":
+        print(f"DEBUG: use_mask={use_mask}, keypoints_viz={keypoints_viz}, dataset_path={dataset_path}")
         if use_mask:
             print("🎭 Masking enabled. Using custom extraction loop.")
             setup_aliked_masking()
@@ -147,10 +148,17 @@ def run_feature_extraction(images_path, output_path, feature_type="aliked", use_
 
         # Inject viz flag into conf
         feature_conf["keypoints_viz"] = keypoints_viz
+        # Update resolution
+        if resize_max:
+             feature_conf["preprocessing"]["resize_max"] = resize_max
+             print(f"📏 Resolution Override: resize_max = {resize_max}")
             
         custom_extract_features(feature_conf, images_path, mask_path, feature_path)
     else:
         # Standard HLOC extraction
+        if resize_max:
+             feature_conf["preprocessing"]["resize_max"] = resize_max
+             print(f"📏 Resolution Override: resize_max = {resize_max}")
         extract_features.main(feature_conf, images_path, feature_path=feature_path)
         
     return feature_path
@@ -1113,6 +1121,12 @@ def main():
         action="store_true",
         help="Visualize keypoints and masks (saves to output/keypoints_viz/)",
     )
+    parser.add_argument(
+        "--resize_max",
+        type=int,
+        default=None,
+        help="Maximum image dimension for feature extraction (default: 1024 for ALIKED). Increase for higher resolution.",
+    )
 
     args = parser.parse_args()
 
@@ -1163,6 +1177,7 @@ def main():
     if args.keypoints_viz: flags.append("🎨 Visualization")
     if args.undistort: flags.append("📐 Undistort")
     if args.normalize: flags.append("🌐 Normalize")
+    if args.resize_max: flags.append(f"📏 Resize: {args.resize_max}px")
     
     print(f"   • Active Flags:   {', '.join(flags) if flags else 'None'}")
     print("=" * 60 + "\n")
@@ -1179,6 +1194,7 @@ def main():
             use_mask=args.mask,
             dataset_path=dataset_path,
             keypoints_viz=args.keypoints_viz,
+            resize_max=args.resize_max,
         )
 
     if args.stage in ["all", "matching"]:
