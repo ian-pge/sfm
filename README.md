@@ -145,6 +145,8 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
 - `--undistort`: (Optional) Undistort images after reconstruction. Crucial for Gaussian Splatting.
 - `--normalize`: (Optional) Normalize scene to unit sphere (centered and scaled). Useful for creating standard datasets (Replica, Scannet++ etc).
 - `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
+- `--mask`: (Optional) Use masks for ALIKED feature extraction. Masks should be in `masks/window` and match image filenames. Areas with mask > 0.5 are ignored.
+- `--keypoints_viz`: (Optional) Save visualization images (image + mask + keypoints) to `output/keypoints_viz`. Useful for debugging masks.
 
 ### Gaussian Splatting Workflow
 

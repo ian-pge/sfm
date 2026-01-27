@@ -64,16 +64,283 @@ def setup_paths(args):
     return dataset_path, images_path, cameras_path, output_path
 
 
-def run_feature_extraction(images_path, output_path, feature_type="aliked"):
+def setup_aliked_masking():
+    """
+    Monkey-patch ALIKED to support masking.
+    The mask is expected to be passed in the 'data' dictionary.
+    """
+    from lightglue.aliked import ALIKED
+
+    # Avoid double patching
+    if getattr(ALIKED, "_is_patched_for_masking", False):
+        return
+
+    original_forward = ALIKED.forward
+
+    def masked_forward(self, data):
+        image = data["image"]
+        # Handle grayscale if needed (ALIKED expects RGB usually)
+        if image.shape[1] == 1:
+            from kornia.color import grayscale_to_rgb
+            image = grayscale_to_rgb(image)
+
+        feature_map, score_map = self.extract_dense_map(image)
+
+        # --- MASK INJECTION START ---
+        if "mask" in data and data["mask"] is not None:
+            mask = data["mask"]
+            # mask: Bx1xHxW. score_map: Bx1xH'xW'
+            
+            # Interpolate mask to match score_map dimensions if needed
+            if mask.shape[-2:] != score_map.shape[-2:]:
+                mask = torch.nn.functional.interpolate(
+                    mask, size=score_map.shape[-2:], mode="nearest"
+                )
+
+            # Apply mask: Set scores of masked areas (1) to -infinity
+            # Ensure mask is on the same device
+            mask = mask.to(score_map.device)
+            score_map = score_map.masked_fill(mask > 0.5, float("-inf"))
+        # --- MASK INJECTION END ---
+
+        keypoints, kptscores, scoredispersitys = self.dkd(
+            score_map, image_size=data.get("image_size")
+        )
+        descriptors, offsets = self.desc_head(feature_map, keypoints)
+
+        _, _, h, w = image.shape
+        wh = torch.tensor([w - 1, h - 1], device=image.device)
+        return {
+            "keypoints": wh * (torch.stack(keypoints) + 1) / 2.0,
+            "descriptors": torch.stack(descriptors),
+            "keypoint_scores": torch.stack(kptscores),
+        }
+
+    ALIKED.forward = masked_forward
+    ALIKED._is_patched_for_masking = True
+    print("✅ ALIKED monkey-patched for masking support.")
+
+
+def run_feature_extraction(images_path, output_path, feature_type="aliked", use_mask=False, dataset_path=None, keypoints_viz=False):
     config = FEATURE_CONFIGS[feature_type]
     feature_conf = extract_features.confs[config["feature"]]
     feature_path = output_path / "features.h5"
 
     print(f"Extracting features to {feature_path} using {feature_type}...")
-    # HLOC uses auto-detection. Verifying device.
+    
+    # If masking OR visualization is enabled and we are using ALIKED
+    if (use_mask or keypoints_viz) and feature_type == "aliked":
+        if use_mask:
+            print("🎭 Masking enabled. Using custom extraction loop.")
+            setup_aliked_masking()
+            if dataset_path:
+                mask_path = dataset_path / "masks" / "window"
+                if not mask_path.exists():
+                    print(f"❌ Error: Mask directory not found at {mask_path}")
+                    sys.exit(1)
+            else:
+                print("❌ Error: dataset_path required for masking")
+                sys.exit(1)
+        else:
+            print("🎨 Visualization enabled (No Mask). Using custom extraction loop.")
+            mask_path = None # No mask
+
+        # Inject viz flag into conf
+        feature_conf["keypoints_viz"] = keypoints_viz
+            
+        custom_extract_features(feature_conf, images_path, mask_path, feature_path)
+    else:
+        # Standard HLOC extraction
+        extract_features.main(feature_conf, images_path, feature_path=feature_path)
+        
+    return feature_path
+
+
+def custom_extract_features(conf, image_dir, mask_dir, feature_path):
+    """
+    Custom version of hloc.extract_features.main to include masks.
+    """
+    import h5py
+    import torch
+    from hloc import extractors, logger
+    from hloc.utils.base_model import dynamic_load
+    from hloc.utils.io import list_h5_names, read_image
+    from hloc.extract_features import ImageDataset, resize_image
+    from tqdm import tqdm
+    import cv2  # Ensure cv2 is available for mask reading
+
+    logger.info(f"Extracting features with masks from {mask_dir}...")
+
+    # We reuse hloc's ImageDataset for images, but we'll manually load masks in the loop
+    dataset = ImageDataset(image_dir, conf["preprocessing"])
+    
+    feature_path.parent.mkdir(exist_ok=True, parents=True)
+    skip_names = set(
+        list_h5_names(feature_path) if feature_path.exists() else ()
+    )
+    dataset.names = [n for n in dataset.names if n not in skip_names]
+    
+    if len(dataset.names) == 0:
+        logger.info("Skipping the extraction (all found in output).")
+        return feature_path
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Feature Extraction Device: {device}")
-    extract_features.main(feature_conf, images_path, feature_path=feature_path)
+    Model = dynamic_load(extractors, conf["model"]["name"])
+    model = Model(conf["model"]).eval().to(device)
+
+    # Use a simple loader
+    loader = torch.utils.data.DataLoader(
+        dataset, num_workers=1, shuffle=False, pin_memory=True
+    )
+    
+    for idx, data in enumerate(tqdm(loader)):
+        name = dataset.names[idx]
+        
+        # Load Mask
+        current_mask_path = None
+        mask = None
+        
+        if mask_dir:
+            current_mask_path = mask_dir / name
+            
+            # If exact match doesn't exist, try replacing extension with common ones
+            if not current_mask_path.exists():
+                for ext in [".png", ".jpg", ".jpeg", ".bmp", ".tif"]:
+                    test_path = mask_dir / (Path(name).stem + ext)
+                    if test_path.exists():
+                        current_mask_path = test_path
+                        break
+            
+            if current_mask_path and current_mask_path.exists():
+                # Read mask
+                # Masks are often 1-channel or 3-channel. We want 1-channel binary-like.
+                mask_np = cv2.imread(str(current_mask_path), cv2.IMREAD_GRAYSCALE)
+                if mask_np is not None:
+                    # Resize mask to match original image size (data['original_size'])
+                    # data['image'] is already resized by ImageDataset potentially.
+                    # data['original_size'] is the size BEFORE preprocessing resize.
+                    
+                    # However, the 'image' tensor passed to the model has been resized.
+                    # We should match the 'image' tensor size.
+                    
+                    image_tensor_shape = data["image"].shape[-2:] # H, W
+                    mask_resized = cv2.resize(mask_np, (image_tensor_shape[1], image_tensor_shape[0]), interpolation=cv2.INTER_NEAREST)
+                    
+                    # Normalize to 0-1 and convert to tensor
+                    # 255 = mask, 0 = background?
+                    # User said "masques des vitres de SAM". Normally SAM outputs binary masks.
+                    # We accept any non-zero as mask.
+                    mask_tensor = torch.from_numpy(mask_resized).float() / 255.0
+                    mask_tensor = (mask_tensor > 0.5).float() # Binary
+                    
+                    # Add to batch (B=1) and channel (C=1)
+                    mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0).to(device)
+                    
+                    # Add to input
+                    # Note: data['image'] is a batch from DataLoader, so it's [B, C, H, W]
+                    # We need to construct the input dict for the model
+                    image_input = data["image"].to(device, non_blocking=True)
+                    
+                    pred_input = {"image": image_input, "mask": mask_tensor}
+                    
+                    # Run Model
+                    with torch.no_grad():
+                        pred = model(pred_input)
+                else:
+                    if mask_dir:
+                        logger.warning(f"Could not read mask: {current_mask_path}")
+                    with torch.no_grad():
+                        pred = model({"image": data["image"].to(device, non_blocking=True)})
+        else:
+            if mask_dir:
+                logger.warning(f"Mask not found for {name} at {mask_dir}")
+            with torch.no_grad():
+                pred = model({"image": data["image"].to(device, non_blocking=True)})
+
+        # --- End Custom Logic, continue with HLOC saving ---
+        
+        pred = {k: v[0].cpu().numpy() for k, v in pred.items()}
+
+        pred["image_size"] = original_size = data["original_size"][0].numpy()
+        if "keypoints" in pred:
+            size = np.array(data["image"].shape[-2:][::-1])
+            scales = (original_size / size).astype(np.float32)
+            pred["keypoints"] = (pred["keypoints"] + 0.5) * scales[None] - 0.5
+            if "scales" in pred:
+                pred["scales"] *= scales.mean()
+            uncertainty = getattr(model, "detection_noise", 1) * scales.mean()
+
+        # --- Visualization Logic ---
+        if conf.get("keypoints_viz", False):
+            viz_dir = feature_path.parent / "keypoints_viz"
+            viz_dir.mkdir(exist_ok=True, parents=True)
+            
+            # Prepare image
+            # data["image"] is [B, C, H, W] tensor (normalized 0-1)
+            img_tensor = data["image"][0].cpu() # C, H, W
+            if img_tensor.shape[0] == 3:
+                img_np = img_tensor.permute(1, 2, 0).numpy() * 255 # H, W, 3
+                img_np = img_np.astype(np.uint8)
+                img_vis = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+            else:
+                img_np = img_tensor[0].numpy() * 255
+                img_np = img_np.astype(np.uint8)
+                img_vis = cv2.cvtColor(img_np, cv2.COLOR_GRAY2BGR)
+
+            # Draw Mask Overlay (if present)
+            if mask is not None:
+                # Mask tensor is on GPU, detach
+                # Mask tensor we created was [1, 1, H, W]
+                m_vis = mask_tensor[0, 0].cpu().numpy() # H, W
+                m_vis = cv2.resize(m_vis, (img_vis.shape[1], img_vis.shape[0]), interpolation=cv2.INTER_NEAREST)
+                
+                # Create colored mask (e.g. Red)
+                overlay = img_vis.copy()
+                overlay[m_vis > 0.5] = [0, 0, 255] # Red in BGR
+                cv2.addWeighted(overlay, 0.3, img_vis, 0.7, 0, img_vis)
+            
+            # Draw Keypoints
+            if "keypoints" in pred:
+                kpts = pred["keypoints"]
+                for x, y in kpts:
+                    # Scale keypoints back to current image size for visualization?
+                    # pred["keypoints"] are scaled to ORIGINAL size.
+                    # But img_vis is the PREPROCESSED size (resized).
+                    # Wait, data["image"] is resized.
+                    # We need keypoints in the coordinate system of img_vis.
+                    
+                    # Inverse scale from pred keys logic
+                    # pred["keypoints"] = (raw + 0.5) * scales - 0.5
+                    # raw = (pred + 0.5) / scales - 0.5
+                    
+                    x_vis = (x + 0.5) / scales[0] - 0.5
+                    y_vis = (y + 0.5) / scales[1] - 0.5
+                    
+                    cv2.circle(img_vis, (int(x_vis), int(y_vis)), 2, (0, 255, 0), -1) # Green
+            
+            # Save
+            # Maintain original filename but png/jpg
+            save_name = Path(name).stem + ".jpg" # force jpg for vis
+            cv2.imwrite(str(viz_dir / save_name), img_vis)
+        # ---------------------------
+
+        with h5py.File(str(feature_path), "a", libver="latest") as fd:
+            try:
+                if name in fd:
+                    del fd[name]
+                grp = fd.create_group(name)
+                for k, v in pred.items():
+                    grp.create_dataset(k, data=v)
+                if "keypoints" in pred:
+                    grp["keypoints"].attrs["uncertainty"] = uncertainty
+            except OSError as error:
+                if "No space left on device" in error.args[0]:
+                    logger.error("Out of disk space.")
+                    del grp, fd[name]
+                raise error
+        del pred
+
+    logger.info("Finished exporting features (custom masked).")
     return feature_path
 
 
@@ -294,9 +561,9 @@ def run_mapping(
             "--output_path",
             str(sparse_output),
             "--skip_pruning",
-            "0",
+            "1",
             "--Thresholds.min_inlier_num",
-            "30",
+            "10",
         ]
         subprocess.run(cmd, check=True)
     elif mapper == "colmap":
@@ -366,34 +633,6 @@ def run_normalization(sparse_path, output_path):
 
     print(f"Centroid: {centroid}")
     print(f"Scale: {scale} (Max camera distance: {max_dist})")
-
-    # Apply Similarity Transform (T = s * [R | t])
-    # We want new_point = s * (old_point - centroid)
-    # new_point = s * old_point + s * (-centroid)
-    # So translation component is s * (-centroid).
-    # But Pycolmap Sim3d constructor takes (scale, rotation, translation) where
-    # P_new = scale * (R * P_old + t)   <-- CHECK THIS DEFINITION CAREFULLY
-    # HELP says: "Apply the 3D similarity transformation to all images and points."
-
-    # Let's verify Sim3d usually implies P' = s * R * P + t  OR  P' = s * R * (P + t)?
-    # Standard Sim3 transform in COLMAP algebra (Sim3d):
-    # If we construct Sim3d(scale, rotation, translation),
-    # usually transform aligns `new_from_old`.
-    # Let's assume P_new = s * R * P_old + t is NOT it,
-    # Usually it is composed.
-    # Let's stick to the construction:
-    # We want to translate by -centroid, then scale by s.
-    # T = Scale(s) * Translation(-centroid)
-    # In matrix form 4x4:
-    # [sI  0] * [I  -c] = [sI  -sc]
-    # [0   1]   [0   1]   [0    1]
-
-    # So Rotation is Identity.
-    # Translation is -scale * centroid? Or just -centroid?
-    # Sim3d(scale, rotation, translation)
-    # If Sim3d applies as: x' = s * R * x + t
-    # Then we need x' = s * (x - c) = s * x - s * c
-    # So t = -s * c
 
     sim3 = reconstruction.pycolmap.Sim3d(
         scale, reconstruction.pycolmap.Rotation3d(), -scale * centroid
@@ -855,7 +1094,7 @@ def main():
     parser.add_argument(
         "--window_size",
         type=int,
-        default=10,
+        default=5,
         help="Number of sequential images to match (default: 3).",
     )
     parser.add_argument(
@@ -863,6 +1102,16 @@ def main():
         type=int,
         default=20,
         help="Number of candidates for Global Retrieval (default: 30).",
+    )
+    parser.add_argument(
+        "--mask",
+        action="store_true",
+        help="Use masks for ALIKED feature extraction (ignores areas where mask > 0.5)",
+    )
+    parser.add_argument(
+        "--keypoints_viz",
+        action="store_true",
+        help="Visualize keypoints and masks (saves to output/keypoints_viz/)",
     )
 
     args = parser.parse_args()
@@ -883,13 +1132,40 @@ def main():
 
     dataset_path, images_path, cameras_path, output_path = setup_paths(args)
 
-    print(f"Dataset: {dataset_path}")
-
     # Count initial images
     initial_images = sorted([p for p in images_path.iterdir() if p.is_file()])
     num_initial_images = len(initial_images)
 
-    print(f"Output: {output_path}")
+    print("\n" + "=" * 60)
+    print("🚀  S F M   P I P E L I N E   S T A R T")
+    print("=" * 60)
+    print(f"📅 Date: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"📂 Dataset:    {dataset_path}")
+    print(f"📁 Output:     {output_path}")
+    print(f"📸 Images:     {num_initial_images}")
+    
+    if torch.cuda.is_available():
+        print(f"✅ GPU:        {torch.cuda.get_device_name(0)}")
+    else:
+        print("❌ GPU:        Not Detected (Expect slow performance)")
+
+    print("-" * 60)
+    print("⚙️  Configuration:")
+    print(f"   • Feature Type:   {args.feature_type}")
+    print(f"   • Matching:       {args.matching_type}")
+    print(f"   • Mapper:         {args.mapper}")
+    print(f"   • Camera Model:   {args.camera_model}")
+    print(f"   • Window Size:    {args.window_size}")
+    print(f"   • Retrieval Num:  {args.retrieval_num}")
+    
+    flags = []
+    if args.mask: flags.append("🎭 Masking")
+    if args.keypoints_viz: flags.append("🎨 Visualization")
+    if args.undistort: flags.append("📐 Undistort")
+    if args.normalize: flags.append("🌐 Normalize")
+    
+    print(f"   • Active Flags:   {', '.join(flags) if flags else 'None'}")
+    print("=" * 60 + "\n")
 
     feature_path = output_path / "features.h5"
     match_path = output_path / "matches.h5"
@@ -897,7 +1173,12 @@ def main():
 
     if args.stage in ["all", "features"]:
         feature_path = run_feature_extraction(
-            images_path, output_path, feature_type=args.feature_type
+            images_path,
+            output_path,
+            feature_type=args.feature_type,
+            use_mask=args.mask,
+            dataset_path=dataset_path,
+            keypoints_viz=args.keypoints_viz,
         )
 
     if args.stage in ["all", "matching"]:
