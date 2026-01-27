@@ -569,9 +569,9 @@ def run_mapping(
             "--output_path",
             str(sparse_output),
             "--skip_pruning",
-            "1",
+            "0",
             "--Thresholds.min_inlier_num",
-            "10",
+            "15",
         ]
         subprocess.run(cmd, check=True)
     elif mapper == "colmap":
