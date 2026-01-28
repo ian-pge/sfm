@@ -53,8 +53,8 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
     # Load YOLO
     yolo_model = None
     if use_yolo:
-        print("🚗 Loading YOLOv8 Medium Segmentation...")
-        yolo_model = YOLO("yolov8m-seg.pt") 
+        print("🚗 Loading YOLO26 X-Large Segmentation...")
+        yolo_model = YOLO("yolo26x-seg.pt") 
     
     prev_feats = None
     

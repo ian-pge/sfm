@@ -82,6 +82,7 @@ def setup_aliked_masking():
         # Handle grayscale if needed (ALIKED expects RGB usually)
         if image.shape[1] == 1:
             from kornia.color import grayscale_to_rgb
+
             image = grayscale_to_rgb(image)
 
         feature_map, score_map = self.extract_dense_map(image)
@@ -90,7 +91,7 @@ def setup_aliked_masking():
         if "mask" in data and data["mask"] is not None:
             mask = data["mask"]
             # mask: Bx1xHxW. score_map: Bx1xH'xW'
-            
+
             # Interpolate mask to match score_map dimensions if needed
             if mask.shape[-2:] != score_map.shape[-2:]:
                 mask = torch.nn.functional.interpolate(
@@ -121,16 +122,26 @@ def setup_aliked_masking():
     print("✅ ALIKED monkey-patched for masking support.")
 
 
-def run_feature_extraction(images_path, output_path, feature_type="aliked", use_mask=False, dataset_path=None, keypoints_viz=False, resize_max=None):
+def run_feature_extraction(
+    images_path,
+    output_path,
+    feature_type="aliked",
+    use_mask=False,
+    dataset_path=None,
+    keypoints_viz=False,
+    resize_max=None,
+):
     config = FEATURE_CONFIGS[feature_type]
     feature_conf = extract_features.confs[config["feature"]]
     feature_path = output_path / "features.h5"
 
     print(f"Extracting features to {feature_path} using {feature_type}...")
-    
+
     # If masking OR visualization is enabled and we are using ALIKED
     if (use_mask or keypoints_viz) and feature_type == "aliked":
-        print(f"DEBUG: use_mask={use_mask}, keypoints_viz={keypoints_viz}, dataset_path={dataset_path}")
+        print(
+            f"DEBUG: use_mask={use_mask}, keypoints_viz={keypoints_viz}, dataset_path={dataset_path}"
+        )
         if use_mask:
             print("🎭 Masking enabled. Using custom extraction loop.")
             setup_aliked_masking()
@@ -144,23 +155,23 @@ def run_feature_extraction(images_path, output_path, feature_type="aliked", use_
                 sys.exit(1)
         else:
             print("🎨 Visualization enabled (No Mask). Using custom extraction loop.")
-            mask_path = None # No mask
+            mask_path = None  # No mask
 
         # Inject viz flag into conf
         feature_conf["keypoints_viz"] = keypoints_viz
         # Update resolution
         if resize_max:
-             feature_conf["preprocessing"]["resize_max"] = resize_max
-             print(f"📏 Resolution Override: resize_max = {resize_max}")
-            
+            feature_conf["preprocessing"]["resize_max"] = resize_max
+            print(f"📏 Resolution Override: resize_max = {resize_max}")
+
         custom_extract_features(feature_conf, images_path, mask_path, feature_path)
     else:
         # Standard HLOC extraction
         if resize_max:
-             feature_conf["preprocessing"]["resize_max"] = resize_max
-             print(f"📏 Resolution Override: resize_max = {resize_max}")
+            feature_conf["preprocessing"]["resize_max"] = resize_max
+            print(f"📏 Resolution Override: resize_max = {resize_max}")
         extract_features.main(feature_conf, images_path, feature_path=feature_path)
-        
+
     return feature_path
 
 
@@ -181,13 +192,11 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
 
     # We reuse hloc's ImageDataset for images, but we'll manually load masks in the loop
     dataset = ImageDataset(image_dir, conf["preprocessing"])
-    
+
     feature_path.parent.mkdir(exist_ok=True, parents=True)
-    skip_names = set(
-        list_h5_names(feature_path) if feature_path.exists() else ()
-    )
+    skip_names = set(list_h5_names(feature_path) if feature_path.exists() else ())
     dataset.names = [n for n in dataset.names if n not in skip_names]
-    
+
     if len(dataset.names) == 0:
         logger.info("Skipping the extraction (all found in output).")
         return feature_path
@@ -200,17 +209,17 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
     loader = torch.utils.data.DataLoader(
         dataset, num_workers=1, shuffle=False, pin_memory=True
     )
-    
+
     for idx, data in enumerate(tqdm(loader)):
         name = dataset.names[idx]
-        
+
         # Load Mask
         current_mask_path = None
         mask = None
-        
+
         if mask_dir:
             current_mask_path = mask_dir / name
-            
+
             # If exact match doesn't exist, try replacing extension with common ones
             if not current_mask_path.exists():
                 for ext in [".png", ".jpg", ".jpeg", ".bmp", ".tif"]:
@@ -218,7 +227,7 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
                     if test_path.exists():
                         current_mask_path = test_path
                         break
-            
+
             if current_mask_path and current_mask_path.exists():
                 # Read mask
                 # Masks are often 1-channel or 3-channel. We want 1-channel binary-like.
@@ -227,30 +236,34 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
                     # Resize mask to match original image size (data['original_size'])
                     # data['image'] is already resized by ImageDataset potentially.
                     # data['original_size'] is the size BEFORE preprocessing resize.
-                    
+
                     # However, the 'image' tensor passed to the model has been resized.
                     # We should match the 'image' tensor size.
-                    
-                    image_tensor_shape = data["image"].shape[-2:] # H, W
-                    mask_resized = cv2.resize(mask_np, (image_tensor_shape[1], image_tensor_shape[0]), interpolation=cv2.INTER_NEAREST)
-                    
+
+                    image_tensor_shape = data["image"].shape[-2:]  # H, W
+                    mask_resized = cv2.resize(
+                        mask_np,
+                        (image_tensor_shape[1], image_tensor_shape[0]),
+                        interpolation=cv2.INTER_NEAREST,
+                    )
+
                     # Normalize to 0-1 and convert to tensor
                     # 255 = mask, 0 = background?
                     # User said "masques des vitres de SAM". Normally SAM outputs binary masks.
                     # We accept any non-zero as mask.
                     mask_tensor = torch.from_numpy(mask_resized).float() / 255.0
-                    mask_tensor = (mask_tensor > 0.5).float() # Binary
-                    
+                    mask_tensor = (mask_tensor > 0.5).float()  # Binary
+
                     # Add to batch (B=1) and channel (C=1)
                     mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0).to(device)
-                    
+
                     # Add to input
                     # Note: data['image'] is a batch from DataLoader, so it's [B, C, H, W]
                     # We need to construct the input dict for the model
                     image_input = data["image"].to(device, non_blocking=True)
-                    
+
                     pred_input = {"image": image_input, "mask": mask_tensor}
-                    
+
                     # Run Model
                     with torch.no_grad():
                         pred = model(pred_input)
@@ -258,7 +271,9 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
                     if mask_dir:
                         logger.warning(f"Could not read mask: {current_mask_path}")
                     with torch.no_grad():
-                        pred = model({"image": data["image"].to(device, non_blocking=True)})
+                        pred = model(
+                            {"image": data["image"].to(device, non_blocking=True)}
+                        )
         else:
             if mask_dir:
                 logger.warning(f"Mask not found for {name} at {mask_dir}")
@@ -266,7 +281,7 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
                 pred = model({"image": data["image"].to(device, non_blocking=True)})
 
         # --- End Custom Logic, continue with HLOC saving ---
-        
+
         pred = {k: v[0].cpu().numpy() for k, v in pred.items()}
 
         pred["image_size"] = original_size = data["original_size"][0].numpy()
@@ -282,12 +297,12 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
         if conf.get("keypoints_viz", False):
             viz_dir = feature_path.parent / "keypoints_viz"
             viz_dir.mkdir(exist_ok=True, parents=True)
-            
+
             # Prepare image
             # data["image"] is [B, C, H, W] tensor (normalized 0-1)
-            img_tensor = data["image"][0].cpu() # C, H, W
+            img_tensor = data["image"][0].cpu()  # C, H, W
             if img_tensor.shape[0] == 3:
-                img_np = img_tensor.permute(1, 2, 0).numpy() * 255 # H, W, 3
+                img_np = img_tensor.permute(1, 2, 0).numpy() * 255  # H, W, 3
                 img_np = img_np.astype(np.uint8)
                 img_vis = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
             else:
@@ -299,14 +314,18 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
             if mask is not None:
                 # Mask tensor is on GPU, detach
                 # Mask tensor we created was [1, 1, H, W]
-                m_vis = mask_tensor[0, 0].cpu().numpy() # H, W
-                m_vis = cv2.resize(m_vis, (img_vis.shape[1], img_vis.shape[0]), interpolation=cv2.INTER_NEAREST)
-                
+                m_vis = mask_tensor[0, 0].cpu().numpy()  # H, W
+                m_vis = cv2.resize(
+                    m_vis,
+                    (img_vis.shape[1], img_vis.shape[0]),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+
                 # Create colored mask (e.g. Red)
                 overlay = img_vis.copy()
-                overlay[m_vis > 0.5] = [0, 0, 255] # Red in BGR
+                overlay[m_vis > 0.5] = [0, 0, 255]  # Red in BGR
                 cv2.addWeighted(overlay, 0.3, img_vis, 0.7, 0, img_vis)
-            
+
             # Draw Keypoints
             if "keypoints" in pred:
                 kpts = pred["keypoints"]
@@ -316,19 +335,21 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
                     # But img_vis is the PREPROCESSED size (resized).
                     # Wait, data["image"] is resized.
                     # We need keypoints in the coordinate system of img_vis.
-                    
+
                     # Inverse scale from pred keys logic
                     # pred["keypoints"] = (raw + 0.5) * scales - 0.5
                     # raw = (pred + 0.5) / scales - 0.5
-                    
+
                     x_vis = (x + 0.5) / scales[0] - 0.5
                     y_vis = (y + 0.5) / scales[1] - 0.5
-                    
-                    cv2.circle(img_vis, (int(x_vis), int(y_vis)), 2, (0, 255, 0), -1) # Green
-            
+
+                    cv2.circle(
+                        img_vis, (int(x_vis), int(y_vis)), 2, (0, 255, 0), -1
+                    )  # Green
+
             # Save
             # Maintain original filename but png/jpg
-            save_name = Path(name).stem + ".jpg" # force jpg for vis
+            save_name = Path(name).stem + ".jpg"  # force jpg for vis
             cv2.imwrite(str(viz_dir / save_name), img_vis)
         # ---------------------------
 
@@ -1102,7 +1123,7 @@ def main():
     parser.add_argument(
         "--window_size",
         type=int,
-        default=5,
+        default=10,
         help="Number of sequential images to match (default: 3).",
     )
     parser.add_argument(
@@ -1157,7 +1178,7 @@ def main():
     print(f"📂 Dataset:    {dataset_path}")
     print(f"📁 Output:     {output_path}")
     print(f"📸 Images:     {num_initial_images}")
-    
+
     if torch.cuda.is_available():
         print(f"✅ GPU:        {torch.cuda.get_device_name(0)}")
     else:
@@ -1171,14 +1192,19 @@ def main():
     print(f"   • Camera Model:   {args.camera_model}")
     print(f"   • Window Size:    {args.window_size}")
     print(f"   • Retrieval Num:  {args.retrieval_num}")
-    
+
     flags = []
-    if args.mask: flags.append("🎭 Masking")
-    if args.keypoints_viz: flags.append("🎨 Visualization")
-    if args.undistort: flags.append("📐 Undistort")
-    if args.normalize: flags.append("🌐 Normalize")
-    if args.resize_max: flags.append(f"📏 Resize: {args.resize_max}px")
-    
+    if args.mask:
+        flags.append("🎭 Masking")
+    if args.keypoints_viz:
+        flags.append("🎨 Visualization")
+    if args.undistort:
+        flags.append("📐 Undistort")
+    if args.normalize:
+        flags.append("🌐 Normalize")
+    if args.resize_max:
+        flags.append(f"📏 Resize: {args.resize_max}px")
+
     print(f"   • Active Flags:   {', '.join(flags) if flags else 'None'}")
     print("=" * 60 + "\n")
 
