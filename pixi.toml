@@ -97,6 +97,7 @@ pypose = "*"
 kornia = "*"
 ultralytics = "*"
 pysocks = "*"
+evo = ">=1.34.2, <2"
 
 
 
