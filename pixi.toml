@@ -67,14 +67,6 @@ libcublas-dev = "12.1.*"
 libcusolver-dev = "*"
 libcusparse-dev = "*"
 pytorch-scatter = "*"
-yacs = "*"
-einops = "*"
-numba = "*"
-matplotlib = "*"
-rerun-sdk = ">=0.15"
-
-
-
 openimageio = "*"
 glew = "*"
 freeimage = "*"
@@ -92,12 +84,3 @@ piexif = ">=1.1.3, <2"
 pillow-heif = ">=1.1.1, <2"
 hloc = { git = "https://github.com/cvg/Hierarchical-Localization.git" }
 lightglue = { git = "https://github.com/cvg/LightGlue.git" }
-# pycolmap = ">=0.6"
-pypose = "*"
-kornia = "*"
-ultralytics = "*"
-pysocks = "*"
-evo = ">=1.34.2, <2"
-
-
-
