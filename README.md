@@ -148,6 +148,23 @@ pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model 
 - `--mask`: (Optional) Use masks for ALIKED feature extraction. Masks should be in `masks/window` and match image filenames. Areas with mask > 0.5 are ignored.
 - `--keypoints_viz`: (Optional) Save visualization images (image + mask + keypoints) to `output/keypoints_viz`. Useful for debugging masks.
 - `--resize_max`: (Optional) Set maximum image dimension for feature extraction (default: 1024). Use higher values (e.g. 1600, 2048) for less downscaling.
+- `--covisibility`: (Optional) Enable **Two-Pass Reconstruction**. After the first pass, it uses the 3D model to find additional "geometric" matches (covisibility) and re-runs the pipeline. Highly recommended for complex or sparse datasets.
+- `--covisibility_num`: (Optional) Number of extra pairs to find per image during covisibility refinement (Default: 10).
+
+### Manual Pair Selection
+You can manually force specific pairs to be matched by creating a `pairs_additional.txt` file in your dataset folder or output folder.
+
+To easily select pairs visually, use the provided GUI tool:
+```bash
+python scripts/pair_selector.py /path/to/images --additional_pairs /path/to/output/pairs_additional.txt
+```
+1. Click the first image of a pair.
+2. Click the second image.
+3. Repeat for as many pairs as needed.
+4. Click **OK (Save)** to write/append them to `pairs_additional.txt`.
+
+**Integration:**
+The pipeline automatically detects if `pairs_additional.txt` exists in your output directory and merges those pairs into the matching process. You can also manually specify a file location with `--additional_pairs /path/to/file.txt`.
 
 ### Gaussian Splatting Workflow
 

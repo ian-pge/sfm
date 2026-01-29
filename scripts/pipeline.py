@@ -26,6 +26,7 @@ from hloc import (
     match_features,
     pairs_from_exhaustive,
     pairs_from_retrieval,
+    pairs_from_covisibility,
     reconstruction,
 )
 
@@ -137,8 +138,8 @@ def run_feature_extraction(
 
     print(f"Extracting features to {feature_path} using {feature_type}...")
 
-    # If masking OR visualization is enabled and we are using ALIKED
-    if (use_mask or keypoints_viz) and feature_type == "aliked":
+    # If masking is enabled (ALIKED only) OR visualization is requested (Any)
+    if (use_mask and feature_type == "aliked") or keypoints_viz:
         print(
             f"DEBUG: use_mask={use_mask}, keypoints_viz={keypoints_viz}, dataset_path={dataset_path}"
         )
@@ -395,6 +396,7 @@ def run_matching(
     matching_type="hybrid",
     window_size=10,
     num_matched=30,
+    additional_pairs_path=None,
 ):
     config = FEATURE_CONFIGS[feature_type]
     matcher_conf = match_features.confs[config["matcher"]]
@@ -465,12 +467,76 @@ def run_matching(
                     pairs.add((p1, p2))
 
         print(f"Merged {len(pairs)} unique pairs from Sequential and Retrieval.")
+        
+        # Merge Additional Pairs if provided
+        if additional_pairs_path and os.path.exists(additional_pairs_path):
+            print(f"Merging additional pairs from {additional_pairs_path}...")
+            added_count = 0
+            with open(additional_pairs_path, "r") as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        p1, p2 = parts[0], parts[1]
+                        if p1 > p2: p1, p2 = p2, p1
+                        if (p1, p2) not in pairs:
+                            pairs.add((p1, p2))
+                            added_count += 1
+            print(f"Added {added_count} new pairs from additional file.")
+
         with open(pairs_path, "w") as f:
             for p1, p2 in sorted(pairs):
                 f.write(f"{p1} {p2}\n")
     else:
         print(f"Unknown matching type: {matching_type}")
         sys.exit(1)
+
+    # --- Check for users additional pairs ---
+    additional_pairs_files = [
+        images_path.parent / "pairs_additional.txt",
+        output_path / "pairs_additional.txt"
+    ]
+
+    additional_pairs = set()
+    for p_path in additional_pairs_files:
+        if p_path.exists():
+            print(f"Found additional pairs file: {p_path}")
+            with open(p_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        p1, p2 = parts[:2]
+                        if p1 > p2:
+                            p1, p2 = p2, p1
+                        additional_pairs.add((p1, p2))
+
+    if additional_pairs:
+        print(f"Loaded {len(additional_pairs)} additional pairs.")
+        
+        # Load existing pairs
+        existing_pairs = set()
+        if pairs_path.exists():
+            with open(pairs_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    p1, p2 = line.split()
+                    if p1 > p2:
+                        p1, p2 = p2, p1
+                    existing_pairs.add((p1, p2))
+        
+        # Merge
+        total_pairs = existing_pairs.union(additional_pairs)
+        print(f"Merging additional pairs: {len(existing_pairs)} -> {len(total_pairs)}")
+
+        with open(pairs_path, "w") as f:
+            for p1, p2 in sorted(total_pairs):
+                f.write(f"{p1} {p2}\n")
+
+
 
     print(f"Matching features into {match_path} using {config['matcher']}...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -1148,6 +1214,21 @@ def main():
         default=None,
         help="Maximum image dimension for feature extraction (default: 1024 for ALIKED). Increase for higher resolution.",
     )
+    parser.add_argument(
+        "--covisibility",
+        action="store_true",
+        help="Enable covisibility-based matching refinement (two-pass SfM).",
+    )
+    parser.add_argument(
+        "--covisibility_num",
+        type=int,
+        default=10,
+        help="Number of covisibility-based pairs per image (default: 10).",
+    )
+    parser.add_argument(
+        "--additional_pairs",
+        help="Path to a text file with additional image pairs (one pair per line) to match.",
+    )
 
     args = parser.parse_args()
 
@@ -1204,6 +1285,8 @@ def main():
         flags.append("🌐 Normalize")
     if args.resize_max:
         flags.append(f"📏 Resize: {args.resize_max}px")
+    if args.covisibility:
+        flags.append("🔄 Covisibility (2-Pass)")
 
     print(f"   • Active Flags:   {', '.join(flags) if flags else 'None'}")
     print("=" * 60 + "\n")
@@ -1227,6 +1310,13 @@ def main():
         if not feature_path.exists():
             print("Features file not found. Run 'features' stage first.")
             sys.exit(1)
+        # Auto-detect additional pairs in output directory if not provided
+        if args.additional_pairs is None:
+            auto_pairs = output_path / "pairs_additional.txt"
+            if auto_pairs.exists():
+                print(f"ℹ️  Auto-detected additional pairs file: {auto_pairs}")
+                args.additional_pairs = auto_pairs
+
         match_path, pairs_path = run_matching(
             output_path,
             feature_path,
@@ -1235,6 +1325,7 @@ def main():
             matching_type=args.matching_type,
             window_size=args.window_size,
             num_matched=args.retrieval_num,
+            additional_pairs_path=args.additional_pairs,
         )
 
     if args.stage in ["all", "mapping"]:
@@ -1263,6 +1354,77 @@ def main():
 
         if args.undistort:
             run_undistortion(sparse_output, images_path, output_path)
+
+        # COVISIBILITY REFINEMENT (Second Pass)
+        if args.covisibility:
+            print("\n" + "🔄" * 10)
+            print("Running COVISIBILITY REFINEMENT (Second Pass)...")
+            print("🔄" * 10 + "\n")
+
+            pairs_covis_path = output_path / "pairs_covisibility.txt"
+            
+            # Find the actual sparse model path (handle 0/ subdir)
+            model_path_for_covis = sparse_output
+            if (model_path_for_covis / "0").exists():
+                model_path_for_covis = model_path_for_covis / "0"
+
+            print(f"Generating covisibility pairs from {model_path_for_covis}...")
+            pairs_from_covisibility.main(
+                model_path_for_covis,
+                pairs_covis_path,
+                num_matched=args.covisibility_num
+            )
+
+            # Re-run Matching with new pairs
+            print(f"Matching features for {args.covisibility_num} covisibility pairs...")
+            match_features.main(
+                match_features.confs[FEATURE_CONFIGS[args.feature_type]["matcher"]],
+                pairs_covis_path,
+                features=feature_path,
+                matches=match_path
+            )
+
+            # Re-run Mapping (Incremental mapping to update the model)
+            print("Updating reconstruction with new matches...")
+            # We clear the sparse dir to re-map with better connectivity
+            shutil.rmtree(str(sparse_output))
+            sparse_output.mkdir()
+            
+            # MERGE PAIRS for the final mapping
+            # We need to explicitly tell import_matches to look for the new pairs too.
+            pairs_merged_path = output_path / "pairs_merged.txt"
+            unique_pairs = set()
+            
+            # Read original
+            if pairs_path.exists():
+                with open(pairs_path, "r") as f:
+                    for line in f: unique_pairs.add(line.strip())
+            
+            # Read covisibility
+            if pairs_covis_path.exists():
+                with open(pairs_covis_path, "r") as f:
+                    for line in f: unique_pairs.add(line.strip())
+            
+            # Write merged
+            with open(pairs_merged_path, "w") as f:
+                for line in sorted(unique_pairs):
+                    f.write(f"{line}\n")
+            
+            run_mapping(
+                output_path,
+                dataset_path,
+                images_path,
+                cameras_path,
+                feature_path,
+                match_path,
+                pairs_merged_path, # Use the MERGED list
+                camera_model=args.camera_model,
+                mapper=args.mapper,
+            )
+            
+            # Re-export
+            print("Exporting refined reconstruction...")
+            export_reconstruction(sparse_output, output_path)
 
     if args.stage == "export":
         sparse_output = output_path / "sparse"
