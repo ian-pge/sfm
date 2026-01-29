@@ -1,6 +1,6 @@
 # Reconstruction Pipeline: HLOC + GLOMAP / COLMAP
 
-This pipeline automates the creation of a sparse 3D reconstruction from a set of images using modern deep learning features (ALIKED + LightGlue by default) and a global (GLOMAP) or incremental (COLMAP) structure-from-motion mapper.
+This pipeline automates the creation of a sparse 3D reconstruction from a set of images using modern deep learning features (SuperPoint + LightGlue by default) and a global (GLOMAP) or incremental (COLMAP) structure-from-motion mapper.
 
 > **Note**: This pipeline uses everything compiled from source with CUDA support for optimal performance.
 > 
@@ -8,7 +8,7 @@ This pipeline automates the creation of a sparse 3D reconstruction from a set of
 ![Alt Text](./shema.png)
 
 The pipeline performs the following steps:
-1.  **Feature Extraction**: Extracts keypoints using **ALIKED** (default), SuperPoint, DISK, or SIFT.
+1.  **Feature Extraction**: Extracts keypoints using **SuperPoint** (default), ALIKED, DISK, or SIFT.
 2.  **Matching**: Matches keypoints between image pairs using **LightGlue** (or Adalam for SIFT). Supports Sequential, Exhaustive, or Retrieval-based matching strategies.
 3.  **Database Creation**: Imports intrinsics and matches into a COLMAP database (`database.db`).
 4.  **Geometric Verification**: Verifies matches to filter outliers (Crucial for GLOMAP).
@@ -66,7 +66,7 @@ pixi run process-video --video /path/to/vid1.mp4 --gui
 ```
 
 **Key Features:**
-1.  **Geometric Overlap (Adaptive)**: Uses **ALIKED** features + **LightGlue** matching to calculate Homography and IoU (Intersection over Union). It only saves a new frame if the overlap with the previous frame drops below a threshold (default 0.8).
+1.  **Geometric Overlap (Adaptive)**: Uses **SuperPoint** features + **LightGlue** matching to calculate Homography and IoU (Intersection over Union). It only saves a new frame if the overlap with the previous frame drops below a threshold (default 0.8).
 2.  **YOLOv8 Segmentation**: Automatically detects cars using **YOLOv8 Medium Segmentation** (`yolov8m-seg`). It filters feature points to ensure tracking is focused **only on the car**, ignoring background movement (trees, other cars).
 3.  **Real-time Visualization**: The `--gui` flag opens a window showing:
     -   Red overlay on the segmented car.
@@ -75,15 +75,15 @@ pixi run process-video --video /path/to/vid1.mp4 --gui
 
 **Arguments:**
 
-| Argument | Description | Default |
-| :--- | :--- | :--- |
-| `--video` | Input video file(s) or folder(s). | Required |
-| `--gui` | Show real-time visualization window. | `False` |
-| `--overlap` | Geometric Overlap Threshold (0.0-1.0). Save if IoU < Threshold. | `0.80` |
-| `--downscale` | Downscale factor for *saved* images (e.g., 2 = half size). | `1` |
-| `--no-adaptive` | Disable adaptive mode (use fixed frame count). | `False` |
-| `--no-yolo` | Disable YOLO segmentation. | `False` |
-| `--num_frames` | (Fixed Mode Only) Number of frames to extract. | `None` |
+| Argument        | Description                                                       | Default    |
+| :-------------- | :---------------------------------------------------------------- | :--------- |
+| `--video`       | Input video file(s) or folder(s).                               | Required   |
+| `--gui`         | Show real-time visualization window.                              | `False`    |
+| `--overlap`     | Geometric Overlap Threshold (0.0-1.0). Save if IoU < Threshold.   | `0.80`     |
+| `--downscale`   | Downscale factor for *saved* images (e.g., 2 = half size).        | `1`        |
+| `--no-adaptive` | Disable adaptive mode (use fixed frame count).                    | `False`    |
+| `--no-yolo`     | Disable YOLO segmentation.                                        | `False`    |
+| `--num_frames`  | (Fixed Mode Only) Number of frames to extract.                    | `None`     |
 
 **Defaults:**
 By default, the script runs with **`--adaptive`** and **`--yolo`** enabled, and an **`--overlap`** of **0.8**. This configuration is optimized for robust car reconstruction.
@@ -122,34 +122,28 @@ pixi run adjust-images --input /path/to/images --output /path/to/output
 - `--frame`: Index of the frame to use for preview (Default: 0).
 - `--resize_preview`: Resize factor for the preview window (e.g. `0.5` for half size).
 
-### Arguments
+### Pipeline Arguments (`scripts/pipeline.py`)
 
-
-example
-```bash
-pixi run sfm --dataset /path/to/dataset --output /path/to/output --camera_model SIMPLE_RADIAL --mapper glomap
-```
-
-- `--dataset`: Path to the dataset root (containing `images/`).
-- `--output`: Directory where results will be saved.
-- `--camera_model`: Camera model for auto-intrinsics (e.g., `PINHOLE`, `SIMPLE_RADIAL`, `OPENCV`). Defaults to `SIMPLE_RADIAL`. Ignored if `cameras.txt` is present.
-- `--matching_type`: Strategy for pairing images:
-  - `hybrid` (default): Combines `sequential` and `retrieval` matching. Best for video datasets where loop closure is needed.
-  - `sequential`: Matches consecutive frames. Good for video.
-  - `exhaustive`: Matches every image with every other image. Good for small datasets.
-  - `retrieval`: Uses global descriptors (NetVLAD) to find overlapping pairs. Good for large datasets.
-- `--window_size`: Number of adjacent frames to match in sequential/hybrid mode (Default: 10). Increase to 20+ for high-FPS video.
-- `--retrieval_num`: Number of loop closure candidates to check in retrieval/hybrid mode (Default: 30). Increase for repetitive scenes.
-- `--feature_type`: Local feature extractor: `aliked` (default), `superpoint`, `disk`, `sift`.
-- `--mapper`: Reconstruction mapper to use: `glomap` (default, global SfM) or `colmap` (incremental SfM).
-- `--undistort`: (Optional) Undistort images after reconstruction. Crucial for Gaussian Splatting.
-- `--normalize`: (Optional) Normalize scene to unit sphere (centered and scaled). Useful for creating standard datasets (Replica, Scannet++ etc).
-- `--stage`: (Optional) Run specific stage: `features`, `matching`, `mapping`, `export` or `all` (default).
-- `--mask`: (Optional) Use masks for ALIKED feature extraction. Masks should be in `masks/window` and match image filenames. Areas with mask > 0.5 are ignored.
-- `--keypoints_viz`: (Optional) Save visualization images (image + mask + keypoints) to `output/keypoints_viz`. Useful for debugging masks.
-- `--resize_max`: (Optional) Set maximum image dimension for feature extraction (default: 1024). Use higher values (e.g. 1600, 2048) for less downscaling.
-- `--covisibility`: (Optional) Enable **Two-Pass Reconstruction**. After the first pass, it uses the 3D model to find additional "geometric" matches (covisibility) and re-runs the pipeline. Highly recommended for complex or sparse datasets.
-- `--covisibility_num`: (Optional) Number of extra pairs to find per image during covisibility refinement (Default: 10).
+| Argument              | Description                                                                           | Default           |
+| :-------------------- | :------------------------------------------------------------------------------------ | :---------------- |
+| `--dataset`           | Path to the dataset root (containing `images/`).                                      | **Required**      |
+| `--output`            | Directory where results will be saved.                                                | `output`          |
+| `--stage`             | Run specific stage: `features`, `matching`, `mapping`, `export`, or `all`.            | `all`             |
+| `--feature_type`      | Local feature extractor: `superpoint`, `aliked`, `disk`, `sift`.                      | `superpoint`      |
+| `--matching_type`     | Pairing strategy: `hybrid`, `sequential`, `exhaustive`, `retrieval`.                  | `hybrid`          |
+| `--mapper`            | Reconstruction mapper: `glomap` (global) or `colmap` (incremental).                   | `glomap`          |
+| `--camera_model`      | Camera model for auto-intrinsics (e.g., `PINHOLE`, `SIMPLE_RADIAL`, `OPENCV`).        | `SIMPLE_RADIAL`   |
+| `--window_size`       | Number of adjacent frames to match in sequential/hybrid mode.                         | `10`              |
+| `--retrieval_num`     | Number of loop closure candidates to check in retrieval/hybrid mode.                  | `20`              |
+| `--mask`              | Use masks for `superpoint`/`aliked`. Masks in `masks/window` must match filenames.     | `False`           |
+| `--keypoints_viz`     | Save visualization (image+mask+keypoints) to `output/keypoints_viz`.                   | `False`           |
+| `--resize_max`        | Maximum image dimension for feature extraction (e.g., 1024, 1600).                    | `None`            |
+| `--undistort`         | Undistort images after reconstruction. Crucial for Gaussian Splatting.                | `False`           |
+| `--normalize`         | Normalize scene to unit sphere (centered and scaled).                                 | `False`           |
+| `--covisibility`      | Enable **Two-Pass Reconstruction** using 3D model to find extra matches.              | `False`           |
+| `--covisibility_num`  | Number of extra pairs per image during covisibility refinement.                       | `10`              |
+| `--additional_pairs`  | Path to a custom `pairs.txt` file to merge into matching.                             | `None`            |
+| `--hybrid`            | Alias for `--matching_type hybrid`.                                                  | `False`           |
 
 ### Manual Pair Selection
 You can manually force specific pairs to be matched by creating a `pairs_additional.txt` file in your dataset folder or output folder.

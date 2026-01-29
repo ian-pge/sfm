@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import torch
-from lightglue import LightGlue, ALIKED
+from lightglue import LightGlue, SuperPoint
 from lightglue.utils import numpy_image_to_torch
 from tqdm.auto import tqdm
 import time
@@ -47,8 +47,8 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
     print(f"🖥️  Using device: {device}")
 
     # Load Geometry Models
-    extractor = ALIKED(max_num_keypoints=1024, detection_threshold=0.01).eval().to(device)
-    matcher = LightGlue(features='aliked').eval().to(device)
+    extractor = SuperPoint(max_num_keypoints=1024, detection_threshold=0.01).eval().to(device)
+    matcher = LightGlue(features='superpoint').eval().to(device)
 
     # Load YOLO
     yolo_model = None

@@ -123,10 +123,135 @@ def setup_aliked_masking():
     print("✅ ALIKED monkey-patched for masking support.")
 
 
+def setup_superpoint_masking():
+    """
+    Monkey-patch SuperPoint to support masking.
+    The mask is expected to be passed in the 'data' dictionary as 'mask'.
+    """
+    try:
+        from SuperGluePretrainedNetwork.models.superpoint import SuperPoint, simple_nms, remove_borders, top_k_keypoints, sample_descriptors
+    except ImportError:
+        # Fallback if the path is slightly different or if using hloc's version which might vendor it differently
+        # But given the file structure viewed earlier, this should work if paths are set up.
+        # scripts/pipeline.py adds 'external' to sys.path
+        try:
+             from models.superpoint import SuperPoint, simple_nms, remove_borders, top_k_keypoints, sample_descriptors
+        except ImportError:
+            print("❌ Error: Could not import SuperPoint for monkey patching.")
+            return
+
+    # Avoid double patching
+    if getattr(SuperPoint, "_is_patched_for_masking", False):
+        return
+
+    original_forward = SuperPoint.forward
+
+    def masked_forward(self, data):
+        """ Compute keypoints, scores, descriptors for image with masking support """
+        # Shared Encoder
+        image = data['image']
+        if image.shape[1] == 3:
+            # Convert RGB to Grayscale for SuperPoint (which expects 1 channel)
+            scale = image.new_tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1)
+            image = (image * scale).sum(dim=1, keepdim=True)
+            
+        x = self.relu(self.conv1a(image))
+        x = self.relu(self.conv1b(x))
+        x = self.pool(x)
+        x = self.relu(self.conv2a(x))
+        x = self.relu(self.conv2b(x))
+        x = self.pool(x)
+        x = self.relu(self.conv3a(x))
+        x = self.relu(self.conv3b(x))
+        x = self.pool(x)
+        x = self.relu(self.conv4a(x))
+        x = self.relu(self.conv4b(x))
+
+        # Compute the dense keypoint scores
+        cPa = self.relu(self.convPa(x))
+        scores = self.convPb(cPa)
+        scores = torch.nn.functional.softmax(scores, 1)[:, :-1]
+        b, _, h, w = scores.shape
+        scores = scores.permute(0, 2, 3, 1).reshape(b, h, w, 8, 8)
+        scores = scores.permute(0, 1, 3, 2, 4).reshape(b, h*8, w*8)
+        
+        # --- MASK INJECTION START ---
+        if "mask" in data and data["mask"] is not None:
+            mask = data["mask"]
+            # mask should be Bx1xHxW (or similar). scores is Bx(H*8)x(W*8)
+            # data['image'] was resized, mask should match that size potentially? 
+            # or mask is passed in matching data['image'] size.
+            
+            # scores is at full resolution (H*8, W*8) which matches input image size
+            
+            if mask.shape[-2:] != scores.shape[-2:]:
+                mask = torch.nn.functional.interpolate(
+                    mask, size=scores.shape[-2:], mode="nearest"
+                )
+            
+            mask = mask.to(scores.device)
+            # Squeeze channel dim if present for broadcasting
+            if mask.dim() == 4:
+                mask = mask.squeeze(1)
+            
+            # Apply mask: Set scores to 0 (or very low) where mask > 0.5
+            # scores are probabilities [0, 1] after softmax? No, wait.
+            # The original code:
+            # scores = torch.nn.functional.softmax(scores, 1)[:, :-1]
+            # This is channel-wise softmax. The last channel is "dustbin" (no keypoint).
+            # We sliced [:, :-1] so we have 64 channels. 
+            # Then reshaped to (b, h*8, w*8).
+            # These are probabilities of "pointness".
+            
+            scores = scores.masked_fill(mask > 0.5, 0.0)
+        # --- MASK INJECTION END ---
+
+        scores = simple_nms(scores, self.config['nms_radius'])
+
+        # Extract keypoints
+        keypoints = [
+            torch.nonzero(s > self.config['keypoint_threshold'])
+            for s in scores]
+        scores = [s[tuple(k.t())] for s, k in zip(scores, keypoints)]
+
+        # Discard keypoints near the image borders
+        keypoints, scores = list(zip(*[
+            remove_borders(k, s, self.config['remove_borders'], h*8, w*8)
+            for k, s in zip(keypoints, scores)]))
+
+        # Keep the k keypoints with highest score
+        if self.config['max_keypoints'] >= 0:
+            keypoints, scores = list(zip(*[
+                top_k_keypoints(k, s, self.config['max_keypoints'])
+                for k, s in zip(keypoints, scores)]))
+
+        # Convert (h, w) to (x, y)
+        keypoints = [torch.flip(k, [1]).float() for k in keypoints]
+
+        # Compute the dense descriptors
+        cDa = self.relu(self.convDa(x))
+        descriptors = self.convDb(cDa)
+        descriptors = torch.nn.functional.normalize(descriptors, p=2, dim=1)
+
+        # Extract descriptors
+        descriptors = [sample_descriptors(k[None], d[None], 8)[0]
+                       for k, d in zip(keypoints, descriptors)]
+
+        return {
+            'keypoints': keypoints,
+            'scores': scores,
+            'descriptors': descriptors,
+        }
+
+    SuperPoint.forward = masked_forward
+    SuperPoint._is_patched_for_masking = True
+    print("✅ SuperPoint monkey-patched for masking support.")
+
+
 def run_feature_extraction(
     images_path,
     output_path,
-    feature_type="aliked",
+    feature_type="superpoint",
     use_mask=False,
     dataset_path=None,
     keypoints_viz=False,
@@ -138,14 +263,17 @@ def run_feature_extraction(
 
     print(f"Extracting features to {feature_path} using {feature_type}...")
 
-    # If masking is enabled (ALIKED only) OR visualization is requested (Any)
-    if (use_mask and feature_type == "aliked") or keypoints_viz:
+    # If masking is enabled OR visualization is requested
+    if (use_mask and feature_type in ["aliked", "superpoint"]) or keypoints_viz:
         print(
             f"DEBUG: use_mask={use_mask}, keypoints_viz={keypoints_viz}, dataset_path={dataset_path}"
         )
         if use_mask:
             print("🎭 Masking enabled. Using custom extraction loop.")
-            setup_aliked_masking()
+            if feature_type == "aliked":
+                setup_aliked_masking()
+            elif feature_type == "superpoint":
+                setup_superpoint_masking()
             if dataset_path:
                 mask_path = dataset_path / "masks" / "window"
                 if not mask_path.exists():
@@ -264,6 +392,9 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
                     image_input = data["image"].to(device, non_blocking=True)
 
                     pred_input = {"image": image_input, "mask": mask_tensor}
+                    
+                    # For SuperPoint, we need to ensure the mask is passed correctly
+                    # The patched forward expects 'mask' in data.
 
                     # Run Model
                     with torch.no_grad():
@@ -1156,8 +1287,8 @@ def main():
     parser.add_argument(
         "--feature_type",
         choices=list(FEATURE_CONFIGS.keys()),
-        default="aliked",
-        help="Feature extractor usage (default: aliked). Use 'sift' for classic robust features, or 'superpoint'/'disk' for deep features.",
+        default="superpoint",
+        help="Feature extractor usage (default: superpoint). Use 'sift' for classic robust features, or 'aliked'/'disk' for other deep features.",
     )
     parser.add_argument(
         "--matching_type",
