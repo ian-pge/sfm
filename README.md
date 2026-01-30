@@ -138,12 +138,15 @@ pixi run adjust-images --input /path/to/images --output /path/to/output
 | `--mask`              | Use masks for `superpoint`/`aliked`. Masks in `masks/window` must match filenames.     | `False`           |
 | `--keypoints_viz`     | Save visualization (image+mask+keypoints) to `output/keypoints_viz`.                   | `False`           |
 | `--resize_max`        | Maximum image dimension for feature extraction (e.g., 1024, 1600).                    | `None`            |
+| `--keypoint_threshold`| SuperPoint detection threshold (0.0 - 1.0). Default `0.005`.                          | `None`            |
+| `--nms_radius`        | SuperPoint NMS radius (pixels). Default `4`.                                          | `None`            |
 | `--undistort`         | Undistort images after reconstruction. Crucial for Gaussian Splatting.                | `False`           |
 | `--normalize`         | Normalize scene to unit sphere (centered and scaled).                                 | `False`           |
 | `--covisibility`      | Enable **Two-Pass Reconstruction** using 3D model to find extra matches.              | `False`           |
 | `--covisibility_num`  | Number of extra pairs per image during covisibility refinement.                       | `10`              |
 | `--additional_pairs`  | Path to a custom `pairs.txt` file to merge into matching.                             | `None`            |
 | `--hybrid`            | Alias for `--matching_type hybrid`.                                                  | `False`           |
+| `--loftr`             | Alias for `--feature_type loftr`. Uses detector-free dense matching. Note: `keypoints_viz` is currently not supported for LoFTR. | `False` |
 
 ### Manual Pair Selection
 You can manually force specific pairs to be matched by creating a `pairs_additional.txt` file in your dataset folder or output folder.

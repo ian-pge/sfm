@@ -48,6 +48,10 @@ FEATURE_CONFIGS = {
         "feature": "sift",
         "matcher": "adalam",
     },
+    "loftr": {
+        "feature": "dummy", # LoFTR is detector-free, no separate feature extraction
+        "matcher": "loftr",
+    },
 }
 
 
@@ -256,10 +260,17 @@ def run_feature_extraction(
     dataset_path=None,
     keypoints_viz=False,
     resize_max=None,
+    keypoint_threshold=None,
+    nms_radius=None,
 ):
     config = FEATURE_CONFIGS[feature_type]
-    feature_conf = extract_features.confs[config["feature"]]
     feature_path = output_path / "features.h5"
+
+    if feature_type == "loftr":
+        print("ℹ️  LoFTR selected: Skipping feature extraction (Detector-free).")
+        return feature_path
+
+    feature_conf = extract_features.confs[config["feature"]]
 
     print(f"Extracting features to {feature_path} using {feature_type}...")
 
@@ -293,12 +304,31 @@ def run_feature_extraction(
             feature_conf["preprocessing"]["resize_max"] = resize_max
             print(f"📏 Resolution Override: resize_max = {resize_max}")
 
+        # Inject SuperPoint specific parameters if provided
+        if feature_type == "superpoint":
+             if keypoint_threshold is not None:
+                 feature_conf["model"]["keypoint_threshold"] = keypoint_threshold
+                 print(f"🔧 SuperPoint Override: keypoint_threshold = {keypoint_threshold}")
+             if nms_radius is not None:
+                 feature_conf["model"]["nms_radius"] = nms_radius
+                 print(f"🔧 SuperPoint Override: nms_radius = {nms_radius}")
+
         custom_extract_features(feature_conf, images_path, mask_path, feature_path)
     else:
         # Standard HLOC extraction
         if resize_max:
             feature_conf["preprocessing"]["resize_max"] = resize_max
             print(f"📏 Resolution Override: resize_max = {resize_max}")
+
+        # Inject SuperPoint specific parameters if provided
+        if feature_type == "superpoint":
+             if keypoint_threshold is not None:
+                 feature_conf["model"]["keypoint_threshold"] = keypoint_threshold
+                 print(f"🔧 SuperPoint Override: keypoint_threshold = {keypoint_threshold}")
+             if nms_radius is not None:
+                 feature_conf["model"]["nms_radius"] = nms_radius
+                 print(f"🔧 SuperPoint Override: nms_radius = {nms_radius}")
+
         extract_features.main(feature_conf, images_path, feature_path=feature_path)
 
     return feature_path
@@ -528,9 +558,13 @@ def run_matching(
     window_size=10,
     num_matched=30,
     additional_pairs_path=None,
+    resize_max=None,
 ):
     config = FEATURE_CONFIGS[feature_type]
-    matcher_conf = match_features.confs[config["matcher"]]
+    
+    if feature_type != "loftr":
+        matcher_conf = match_features.confs[config["matcher"]]
+    
     match_path = output_path / "matches.h5"
     pairs_path = output_path / "pairs.txt"
 
@@ -582,9 +616,18 @@ def run_matching(
             )
         else:
             print(f"ℹ️  No labeled frames detected. Using classical Global Retrieval.")
+            
+            # Clamp num_matched to avoid topk error
+            num_images = len(images_all)
+            if num_matched > num_images:
+                print(f"⚠️  Retrieval num ({num_matched}) > num_images ({num_images}). Clamping to {num_images}.")
+                num_matched = num_images
+
             pairs_from_retrieval.main(
                 global_features_path, pairs_ret, num_matched=num_matched
             )
+
+
 
         # Merge pairs
         pairs = set()
@@ -598,28 +641,83 @@ def run_matching(
                     pairs.add((p1, p2))
 
         print(f"Merged {len(pairs)} unique pairs from Sequential and Retrieval.")
-        
-        # Merge Additional Pairs if provided
-        if additional_pairs_path and os.path.exists(additional_pairs_path):
-            print(f"Merging additional pairs from {additional_pairs_path}...")
-            added_count = 0
-            with open(additional_pairs_path, "r") as f:
+
+    elif matching_type == "loftr":
+        # LoFTR handles its own pairing if needed, or we just rely on pairs being provided/generated
+        # But wait, match_dense NEEDS pairs.
+        # If the user selected loftr without an explicit matching strategy, what should we do?
+        # Default to sequential?
+        print("⚠️  Matching type 'loftr' implied. Generating sequential pairs by default...")
+        pairs_seq = output_path / "pairs_sequential.txt"
+        generate_sequential_pairs(images_path, pairs_seq, window_size=window_size)
+    else:
+        print(f"Unknown matching type: {matching_type}")
+        sys.exit(1)
+
+    # --- LOAD PAIRS INTO SET ---
+    # Ensure 'pairs' set is populated from the generated file if it wasn't already (e.g. by hybrid mode)
+    if 'pairs' not in locals():
+        pairs = set()
+        if pairs_path.exists():
+            with open(pairs_path, "r") as f:
                 for line in f:
                     parts = line.strip().split()
                     if len(parts) >= 2:
                         p1, p2 = parts[0], parts[1]
                         if p1 > p2: p1, p2 = p2, p1
-                        if (p1, p2) not in pairs:
-                            pairs.add((p1, p2))
-                            added_count += 1
-            print(f"Added {added_count} new pairs from additional file.")
+                        pairs.add((p1, p2))
 
-        with open(pairs_path, "w") as f:
-            for p1, p2 in sorted(pairs):
-                f.write(f"{p1} {p2}\n")
+
+    # --- MERGE ADDITIONAL PAIRS (User Provided) ---
+    if additional_pairs_path and os.path.exists(additional_pairs_path):
+        print(f"Merging additional pairs from {additional_pairs_path}...")
+        added_count = 0
+        with open(additional_pairs_path, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    p1, p2 = parts[0], parts[1]
+                    if p1 > p2: p1, p2 = p2, p1
+                    if (p1, p2) not in pairs:
+                        pairs.add((p1, p2))
+                        added_count += 1
+        print(f"Added {added_count} new pairs from additional file.")
+
+    # Write the pairs to file so match_dense or match_features can read them
+    with open(pairs_path, "w") as f:
+        for p1, p2 in sorted(pairs):
+            f.write(f"{p1} {p2}\n")
+
+    # --- EXECUTE MATCHING ---
+    # Now that pairs_path is generated and fully merged, run the actual matching.
+    
+    if feature_type == "loftr":
+        print("⚡ Running LoFTR Dense Matching...")
+        from hloc import match_dense
+        
+        conf = match_dense.confs["loftr"]
+        if resize_max:
+             conf["preprocessing"]["resize_max"] = resize_max
+             print(f"📏 LoFTR Resolution Override: resize_max = {resize_max}")
+
+        match_dense.main(
+            conf,
+            pairs_path,
+            images_path,
+            export_dir=output_path,
+            matches=match_path,
+            features=feature_path, 
+            max_kps=8192 # cap keypoints to keep file size reasonable
+        )
     else:
-        print(f"Unknown matching type: {matching_type}")
-        sys.exit(1)
+        # Standard Feature Matching
+        match_features.main(
+            matcher_conf,
+            pairs_path,
+            features=feature_path,
+            matches=match_path,
+        )
+    
 
     # --- Check for users additional pairs ---
     additional_pairs_files = [
@@ -669,12 +767,6 @@ def run_matching(
 
 
 
-    print(f"Matching features into {match_path} using {config['matcher']}...")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Matching Device: {device}")
-    match_features.main(
-        matcher_conf, pairs_path, features=feature_path, matches=match_path
-    )
     return match_path, pairs_path
 
 
@@ -1346,6 +1438,18 @@ def main():
         help="Maximum image dimension for feature extraction (default: 1024 for ALIKED). Increase for higher resolution.",
     )
     parser.add_argument(
+        "--keypoint_threshold",
+        type=float,
+        default=None,
+        help="SuperPoint keypoint detection threshold (default: 0.005).",
+    )
+    parser.add_argument(
+        "--nms_radius",
+        type=int,
+        default=None,
+        help="SuperPoint Non-Maximum Suppression radius (default: 4).",
+    )
+    parser.add_argument(
         "--covisibility",
         action="store_true",
         help="Enable covisibility-based matching refinement (two-pass SfM).",
@@ -1355,6 +1459,11 @@ def main():
         type=int,
         default=10,
         help="Number of covisibility-based pairs per image (default: 10).",
+    )
+    parser.add_argument(
+        "--loftr",
+        action="store_true",
+        help="Use LoFTR for feature matching (detector-free).",
     )
     parser.add_argument(
         "--additional_pairs",
@@ -1368,6 +1477,10 @@ def main():
     # Handle the --hybrid alias
     if args.hybrid:
         args.matching_type = "hybrid"
+    
+    # Handle the --loftr alias
+    if args.loftr:
+        args.feature_type = "loftr"
 
     if torch.cuda.is_available():
         print(f"✅ GPU Detected: {torch.cuda.get_device_name(0)}")
@@ -1404,18 +1517,29 @@ def main():
     print(f"   • Camera Model:   {args.camera_model}")
     print(f"   • Window Size:    {args.window_size}")
     print(f"   • Retrieval Num:  {args.retrieval_num}")
+    if args.keypoint_threshold:
+        print(f"   • Keypoint Thresh:{args.keypoint_threshold}")
+    if args.nms_radius:
+        print(f"   • NMS Radius:     {args.nms_radius}")
 
     flags = []
     if args.mask:
-        flags.append("🎭 Masking")
+        if args.feature_type == "loftr":
+             flags.append("Warning: Mask ignored for LoFTR")
+        else:
+             flags.append("🎭 Masking")
     if args.keypoints_viz:
-        flags.append("🎨 Visualization")
+        if args.feature_type == "loftr":
+             flags.append("Warning: Viz ignored for LoFTR")
+        else:
+             flags.append("🎨 Visualization")
     if args.undistort:
         flags.append("📐 Undistort")
     if args.normalize:
         flags.append("🌐 Normalize")
     if args.resize_max:
         flags.append(f"📏 Resize: {args.resize_max}px")
+
     if args.covisibility:
         flags.append("🔄 Covisibility (2-Pass)")
 
@@ -1435,10 +1559,12 @@ def main():
             dataset_path=dataset_path,
             keypoints_viz=args.keypoints_viz,
             resize_max=args.resize_max,
+            keypoint_threshold=args.keypoint_threshold,
+            nms_radius=args.nms_radius,
         )
 
     if args.stage in ["all", "matching"]:
-        if not feature_path.exists():
+        if not feature_path.exists() and args.feature_type != "loftr":
             print("Features file not found. Run 'features' stage first.")
             sys.exit(1)
         # Auto-detect additional pairs in output directory if not provided
@@ -1457,6 +1583,7 @@ def main():
             window_size=args.window_size,
             num_matched=args.retrieval_num,
             additional_pairs_path=args.additional_pairs,
+            resize_max=args.resize_max,
         )
 
     if args.stage in ["all", "mapping"]:
@@ -1508,12 +1635,29 @@ def main():
 
             # Re-run Matching with new pairs
             print(f"Matching features for {args.covisibility_num} covisibility pairs...")
-            match_features.main(
-                match_features.confs[FEATURE_CONFIGS[args.feature_type]["matcher"]],
-                pairs_covis_path,
-                features=feature_path,
-                matches=match_path
-            )
+            
+            if args.feature_type == "loftr":
+                 from hloc import match_dense
+                 conf = match_dense.confs["loftr"]
+                 if args.resize_max:
+                     conf["preprocessing"]["resize_max"] = args.resize_max
+                 
+                 match_dense.main(
+                    conf,
+                    pairs_covis_path,
+                    images_path,
+                    export_dir=output_path,
+                    matches=match_path,
+                    features=feature_path, 
+                    max_kps=8192
+                 )
+            else:
+                match_features.main(
+                    match_features.confs[FEATURE_CONFIGS[args.feature_type]["matcher"]],
+                    pairs_covis_path,
+                    features=feature_path,
+                    matches=match_path
+                )
 
             # Re-run Mapping (Incremental mapping to update the model)
             print("Updating reconstruction with new matches...")
