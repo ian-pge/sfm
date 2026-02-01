@@ -971,8 +971,10 @@ def run_normalization(sparse_path, output_path):
     return sparse_path
 
 
-def run_undistortion(sparse_path, images_path, output_path):
+def run_undistortion(sparse_path, dataset_path, output_path):
     print("Running image undistortion (COLMAP)...")
+
+    images_path = dataset_path / "images"
 
     # Define undistortion output path
     undistorted_output = output_path / "undistorted"
@@ -989,6 +991,8 @@ def run_undistortion(sparse_path, images_path, output_path):
 
     print(f"Using model from: {model_path}")
 
+    # 1. Undistort Images
+    print(f"Undistorting images from {images_path}...")
     cmd = [
         "colmap",
         "image_undistorter",
@@ -1026,6 +1030,49 @@ def run_undistortion(sparse_path, images_path, output_path):
     except subprocess.CalledProcessError as e:
         print(f"Error running image undistortion: {e}")
         # Don't exit, just print error as this is post-processing
+
+    # 2. Undistort Car Masks (if available)
+    mask_car_path = dataset_path / "masks" / "car"
+    if mask_car_path.exists():
+        print(f"Found masks at {mask_car_path}. Undistorting masks...")
+        
+        # Create a temp directory for mask raw output (since colmap forces 'images' folder)
+        mask_output_temp = undistorted_output / "masks_temp_colmap"
+        mask_output_temp.mkdir(exist_ok=True, parents=True)
+
+        cmd_mask = [
+            "colmap",
+            "image_undistorter",
+            "--image_path",
+            str(mask_car_path),
+            "--input_path",
+            str(model_path),
+            "--output_path",
+            str(mask_output_temp),
+            "--output_type",
+            "COLMAP",
+        ]
+
+        try:
+            subprocess.run(cmd_mask, check=True)
+            
+            # Move result to proper location: output/undistorted/masks/car
+            # COLMAP create 'images' inside the output path
+            src_masks = mask_output_temp / "images"
+            dst_masks = undistorted_output / "masks" / "car"
+            
+            if src_masks.exists():
+                if dst_masks.exists():
+                    shutil.rmtree(dst_masks)
+                dst_masks.parent.mkdir(exist_ok=True, parents=True)
+                shutil.move(str(src_masks), str(dst_masks))
+                print(f"Undistorted masks saved to {dst_masks}")
+            
+            # Cleanup temp dir
+            shutil.rmtree(mask_output_temp)
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error undistorting masks: {e}")
 
 
 def export_reconstruction(sparse_path, output_path):
@@ -1367,7 +1414,7 @@ def main():
     parser.add_argument("--output", default="output", help="Path to output directory")
     parser.add_argument(
         "--stage",
-        choices=["all", "features", "matching", "mapping", "export"],
+        choices=["all", "features", "matching", "mapping", "export", "undistort"],
         default="all",
         help="Pipeline stage to run",
     )
@@ -1611,7 +1658,7 @@ def main():
         export_reconstruction(sparse_output, output_path)
 
         if args.undistort:
-            run_undistortion(sparse_output, images_path, output_path)
+            run_undistortion(sparse_output, dataset_path, output_path)
 
         # COVISIBILITY REFINEMENT (Second Pass)
         if args.covisibility:
@@ -1706,6 +1753,10 @@ def main():
         # If we normalize, we should probably make sure export sees the right thing.
         # But since normalization overwrites the sparse model, looking at output/sparse is correct.
         export_reconstruction(sparse_output, output_path)
+
+    if args.stage == "undistort":
+        sparse_output = output_path / "sparse"
+        run_undistortion(sparse_output, dataset_path, output_path)
 
     print_summary(
         start_time,

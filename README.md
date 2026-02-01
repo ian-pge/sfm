@@ -128,7 +128,7 @@ pixi run adjust-images --input /path/to/images --output /path/to/output
 | :-------------------- | :------------------------------------------------------------------------------------ | :---------------- |
 | `--dataset`           | Path to the dataset root (containing `images/`).                                      | **Required**      |
 | `--output`            | Directory where results will be saved.                                                | `output`          |
-| `--stage`             | Run specific stage: `features`, `matching`, `mapping`, `export`, or `all`.            | `all`             |
+| `--stage`             | Run specific stage: `features`, `matching`, `mapping`, `export`, `undistort`, or `all`. | `all`             |
 | `--feature_type`      | Local feature extractor: `superpoint`, `aliked`, `disk`, `sift`.                      | `superpoint`      |
 | `--matching_type`     | Pairing strategy: `hybrid`, `sequential`, `exhaustive`, `retrieval`.                  | `hybrid`          |
 | `--mapper`            | Reconstruction mapper: `glomap` (global) or `colmap` (incremental).                   | `glomap`          |
