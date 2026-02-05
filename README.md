@@ -147,6 +147,7 @@ pixi run adjust-images --input /path/to/images --output /path/to/output
 | `--nms_radius`        | SuperPoint NMS radius (pixels). Default `4`.                                          | `None`            |
 | `--undistort`         | Undistort images after reconstruction. Crucial for Gaussian Splatting.                | `False`           |
 | `--normalize`         | Normalize scene to unit sphere (centered and scaled).                                 | `False`           |
+| `--align_method`      | Model alignment: `MANHATTAN-WORLD` (default), `IMAGE-ORIENTATION`, or `disabled`.     | `disabled`        |
 | `--covisibility`      | Enable **Two-Pass Reconstruction** using 3D model to find extra matches.              | `False`           |
 | `--covisibility_num`  | Number of extra pairs per image during covisibility refinement.                       | `10`              |
 | `--additional_pairs`  | Path to a custom `pairs.txt` file to merge into matching.                             | `None`            |
@@ -180,7 +181,6 @@ pixi run sfm --dataset /path/to/distorted_dataset --undistort --camera_model SIM
 This will produce a `undistorted/` folder ready for training.
 
 To create a dataset compatible with standard viewers or pipelines that expect a unit-scaled scene (like Replica/Scannet++), add `--normalize`:
-```bash
 ```bash
 pixi run sfm --dataset /path/to/dataset --undistort --normalize
 ```

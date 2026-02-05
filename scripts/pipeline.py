@@ -896,6 +896,48 @@ def run_mapping(
     return sparse_output
 
 
+def run_alignment(sparse_path, images_path, method="MANHATTAN-WORLD"):
+    print(f"Running model alignment ({method}) on {sparse_path}...")
+
+    # We need to find the specific reconstruction folder (often '0')
+    model_path = sparse_path
+    if (
+        not (model_path / "points3D.bin").exists()
+        and (model_path / "0" / "points3D.bin").exists()
+    ):
+        model_path = model_path / "0"
+
+    if not (model_path / "points3D.bin").exists():
+        print(f"Error: Could not find points3D.bin in {sparse_path} for alignment.")
+        return sparse_path
+
+    cmd = [
+        "colmap",
+        "model_orientation_aligner",
+        "--image_path",
+        str(images_path),
+        "--input_path",
+        str(model_path),
+        "--output_path",
+        str(model_path),
+        "--method",
+        method,
+    ]
+
+    if method == "MANHATTAN-WORLD":
+        # Default options for robust alignment
+        cmd.extend(["--max_image_size", "1024"])
+
+    try:
+        subprocess.run(cmd, check=True)
+        print("✅ Model alignment completed successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error running model alignment: {e}")
+        # Non-fatal?
+    
+    return sparse_path
+
+
 def run_normalization(sparse_path, output_path):
     print(f"Running scene normalization on {sparse_path}...")
 
@@ -1517,6 +1559,13 @@ def main():
         help="Path to a text file with additional image pairs (one pair per line) to match.",
     )
 
+    parser.add_argument(
+        "--align_method",
+        choices=["MANHATTAN-WORLD", "IMAGE-ORIENTATION", "disabled"],
+        default="disabled",
+        help="Method for model orientation alignment (default: disabled). Use 'MANHATTAN-WORLD' for urban scenes.",
+    )
+
     args = parser.parse_args()
 
     start_time = time.time()
@@ -1561,6 +1610,7 @@ def main():
     print(f"   • Feature Type:   {args.feature_type}")
     print(f"   • Matching:       {args.matching_type}")
     print(f"   • Mapper:         {args.mapper}")
+    print(f"   • Alignment:      {args.align_method}")
     print(f"   • Camera Model:   {args.camera_model}")
     print(f"   • Window Size:    {args.window_size}")
     print(f"   • Retrieval Num:  {args.retrieval_num}")
@@ -1582,6 +1632,8 @@ def main():
              flags.append("🎨 Visualization")
     if args.undistort:
         flags.append("📐 Undistort")
+    if args.align_method != "disabled":
+        flags.append(f"📐 Align: {args.align_method}")
     if args.normalize:
         flags.append("🌐 Normalize")
     if args.resize_max:
@@ -1648,6 +1700,10 @@ def main():
             camera_model=args.camera_model,
             mapper=args.mapper,
         )
+
+        if args.align_method != "disabled":
+            # Updates sparse_output in-place (conceptually, on disk)
+            sparse_output = run_alignment(sparse_output, images_path, method=args.align_method)
 
         if args.normalize:
             # Updates sparse_output in-place (conceptually, on disk)
