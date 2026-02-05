@@ -84,6 +84,9 @@ pixi run process-video --video /path/to/vid1.mp4 --gui
 | `--no-adaptive` | Disable adaptive mode (use fixed frame count).                    | `False`    |
 | `--no-yolo`     | Disable YOLO segmentation.                                        | `False`    |
 | `--num_frames`  | (Fixed Mode Only) Number of frames to extract.                    | `None`     |
+| `--output`      | Output dataset directory.                                         | (Video Dir)|
+| `--start`       | Start time in seconds (single video only).                        | `None`     |
+| `--end`         | End time in seconds (single video only).                          | `None`     |
 
 **Defaults:**
 By default, the script runs with **`--adaptive`** and **`--yolo`** enabled, and an **`--overlap`** of **0.8**. This configuration is optimized for robust car reconstruction.
@@ -101,7 +104,9 @@ Files are named `frame_{number}_video_{index}.png` (e.g., `frame_00001_video_0.p
 - `--overlap`: (Adaptive) Geometric IoU overlap threshold (0.0-1.0). Default `0.80`. Recommended `0.80` for high quality. Lower = fewer images (wider baseline).
 - `--num_frames`: (Fixed Mode) Number of frames to extract per video.
 - `--downscale`: Downscale factor (e.g. `2` for half resolution). Default: `1`.
-- `--output`: Output dataset directory. Default: `datasets/<first_video_name>`.
+- `--output`: Output dataset directory. Default: Parent directory of the input video (frames saved in `images/` subfolder).
+- `--start`: (Dynamic Mode) Start time in seconds.
+- `--end`: (Dynamic Mode) End time in seconds.
 
 **Logging:**
 The script prints real-time extraction stats (IoU %) to the console for every saved frame.
@@ -175,6 +180,7 @@ pixi run sfm --dataset /path/to/distorted_dataset --undistort --camera_model SIM
 This will produce a `undistorted/` folder ready for training.
 
 To create a dataset compatible with standard viewers or pipelines that expect a unit-scaled scene (like Replica/Scannet++), add `--normalize`:
+```bash
 ```bash
 pixi run sfm --dataset /path/to/dataset --undistort --normalize
 ```

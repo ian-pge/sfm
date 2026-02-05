@@ -34,7 +34,7 @@ def extract_frames_fixed(video_path, output_dir, num_frames, downscale_factor, s
     # This function is not the main focus of your request.
     pass 
 
-def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downscale_factor=1, start_number=0, video_idx=0, use_yolo=False, show_gui=False):
+def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downscale_factor=1, start_number=0, video_idx=0, use_yolo=False, show_gui=False, start_time=None, end_time=None):
     images_dir = output_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
     
@@ -107,10 +107,24 @@ def extract_precise_geometry(video_path, output_dir, overlap_thresh=0.60, downsc
 
     pbar = tqdm(total=total_frames, desc="🎥 Processing", unit="frame", dynamic_ncols=True, mininterval=0.5, leave=False)
     
+    if start_time is not None and start_time > 0:
+        print(f"  🕒 Seeking to {start_time}s...")
+        cap.set(cv2.CAP_PROP_POS_MSEC, start_time * 1000)
+        # Update frame_count to reflect current position for progress bar
+        frame_count = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+        pbar.update(frame_count)
+    
     proc_start_time = time.time()
     
     with pbar:
         while True:
+            # Check end time
+            if end_time is not None:
+                current_msec = cap.get(cv2.CAP_PROP_POS_MSEC)
+                if current_msec > end_time * 1000:
+                    print(f"\n  🛑 End time {end_time}s reached.")
+                    break
+
             if frame_count % current_stride != 0:
                 if not cap.grab(): break
                 frame_count += 1
@@ -330,6 +344,8 @@ def main():
     parser.add_argument("--num_frames", type=int, help="Fixed mode count")
     parser.add_argument("--downscale", type=int, default=1, help="Downscale")
     parser.add_argument("--output", help="Output dir")
+    parser.add_argument("--start", type=float, help="Start time in seconds")
+    parser.add_argument("--end", type=float, help="End time in seconds")
     
     args = parser.parse_args()
     
@@ -353,23 +369,32 @@ def main():
     if args.output:
         output_dir = Path(args.output).resolve()
     else:
-        root_dir = Path(__file__).parent.parent
-        output_dir = root_dir / "datasets" / video_paths[0].stem
+        # Default to the parent directory of the first video
+        output_dir = video_paths[0].parent
     
+    # Check if truncation is requested for multiple videos
+    start_time = args.start
+    end_time = args.end
+    if len(video_paths) > 1 and (start_time is not None or end_time is not None):
+        print("⚠️ Warning: Truncation (--start/--end) is only supported for single video processing. Ignoring.")
+        start_time = None
+        end_time = None
+
     print(f"📂 Output directory: {output_dir}")
     global_frame_count = 0
     all_stats_summary = []
     
     for video_idx, video in enumerate(video_paths):
         print(f"\n🎞️  --- Processing {video.name} ---")
-        start_time = time.time()
+        video_start_time = time.time()
         
         if args.adaptive:
             # Pass use_siglip argument
             count, v_stats = extract_precise_geometry(
                 video, output_dir, args.overlap, args.downscale, 
                 start_number=global_frame_count, video_idx=video_idx, 
-                use_yolo=args.yolo, show_gui=args.gui
+                use_yolo=args.yolo, show_gui=args.gui,
+                start_time=start_time, end_time=end_time
             )
         else:
             if args.num_frames is None:
@@ -378,8 +403,8 @@ def main():
             # Fixed mode doesn't support SigLIP in this snippet, you can add it if needed
             count, v_stats = extract_frames_fixed(video, output_dir, args.num_frames, args.downscale, start_number=global_frame_count, video_idx=video_idx)
             
-        end_time = time.time()
-        duration_proc = end_time - start_time
+        video_end_time = time.time()
+        duration_proc = video_end_time - video_start_time
         
         avg_matches = 0
         if v_stats.get("valid_car_detections", 0) > 0:
