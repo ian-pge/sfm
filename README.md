@@ -145,7 +145,8 @@ pixi run adjust-images --input /path/to/images --output /path/to/output
 | `--resize_max`        | Maximum image dimension for feature extraction (e.g., 1024, 1600).                    | `None`            |
 | `--keypoint_threshold`| SuperPoint detection threshold (0.0 - 1.0). Default `0.005`.                          | `None`            |
 | `--nms_radius`        | SuperPoint NMS radius (pixels). Default `4`.                                          | `None`            |
-| `--undistort`         | Undistort images after reconstruction. Crucial for Gaussian Splatting.                | `False`           |
+| `--skip-undistort`  | Skip undistortion after reconstruction. Undistortion is now default (crucial for GS). | `False`           |
+| `--downscale_factors` | Additional downscale factors for undistorted images/masks (e.g. `2 4`).               | `[]`              |
 | `--normalize`         | Normalize scene to unit sphere (centered and scaled).                                 | `False`           |
 | `--align_method`      | Model alignment: `MANHATTAN-WORLD` (default), `IMAGE-ORIENTATION`, or `disabled`.     | `disabled`        |
 | `--covisibility`      | Enable **Two-Pass Reconstruction** using 3D model to find extra matches.              | `False`           |
@@ -171,18 +172,18 @@ The pipeline automatically detects if `pairs_additional.txt` exists in your outp
 
 ### Gaussian Splatting Workflow
 
-To prepare data for Gaussian Splatting (which requires **Pinhole** images), use the `--undistort` flag.
+To prepare data for Gaussian Splatting (which requires **Pinhole** images), the pipeline performs undistortion by default (unless `--skip-undistort` is used).
 **Note**: Do NOT use `--camera_model PINHOLE` blindly on distorted images. Let the pipeline learn the distortion (e.g. `SIMPLE_RADIAL`) and then undistort.
 
 ```bash
-pixi run sfm --dataset /path/to/distorted_dataset --undistort --camera_model SIMPLE_RADIAL
+pixi run sfm --dataset /path/to/distorted_dataset --camera_model SIMPLE_RADIAL
 ```
 
 This will produce a `undistorted/` folder ready for training.
 
 To create a dataset compatible with standard viewers or pipelines that expect a unit-scaled scene (like Replica/Scannet++), add `--normalize`:
 ```bash
-pixi run sfm --dataset /path/to/dataset --undistort --normalize
+pixi run sfm --dataset /path/to/dataset --normalize
 ```
 
 ## Output
@@ -194,6 +195,9 @@ The results will be saved in the `--output` directory:
 - `database.db`: SQLite database with all data.
 - **`sparse.ply` / `sparse.glb`**: Exported point clouds for visualization.
 - **`sparse/`**: The final sparse reconstruction files (normalized if `--normalize` used).
-- **`undistorted/`** (if `--undistort` is used):
+- **`undistorted/`** (Default, unless `--skip-undistort` used):
     - `images/`: Undistorted pinhole images.
+    - `images_2/`, `images_4/`...: Downscaled versions (if `--downscale_factors` used).
+    - `masks/car/`: Undistorted masks (if available).
+    - `masks_2/car/`...: Downscaled masks (if `--downscale_factors` used).
     - `sparse/0/`: Corresponding sparse model (compatible with standard Splatting loaders, normalized if `--normalize` used).

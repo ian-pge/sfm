@@ -1013,7 +1013,7 @@ def run_normalization(sparse_path, output_path):
     return sparse_path
 
 
-def run_undistortion(sparse_path, dataset_path, output_path):
+def run_undistortion(sparse_path, dataset_path, output_path, downscale_factors=None):
     print("Running image undistortion (COLMAP)...")
 
     images_path = dataset_path / "images"
@@ -1115,6 +1115,75 @@ def run_undistortion(sparse_path, dataset_path, output_path):
 
         except subprocess.CalledProcessError as e:
             print(f"Error undistorting masks: {e}")
+
+    # 3. Downscaling (Images + Masks)
+    if downscale_factors:
+        import cv2
+
+        print(f"Generating downscaled versions for factors: {downscale_factors}")
+
+        # --- Process Images ---
+        src_images = undistorted_output / "images"
+        if src_images.exists():
+            image_files = sorted([p for p in src_images.iterdir() if p.is_file()])
+            print(f"Downscaling {len(image_files)} images...")
+
+            for factor in downscale_factors:
+                dst_dir = undistorted_output / f"images_{factor}"
+                dst_dir.mkdir(exist_ok=True)
+                print(f"  - Factor {factor}: Saving to {dst_dir}...")
+
+                for img_path in image_files:
+                    # Read image
+                    img = cv2.imread(str(img_path))
+                    if img is None:
+                        continue
+
+                    h, w = img.shape[:2]
+                    new_h, new_w = h // factor, w // factor
+                    
+                    # Resize
+                    img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                    
+                    # Save
+                    cv2.imwrite(str(dst_dir / img_path.name), img_resized)
+
+        # --- Process Masks (if any) ---
+        # Look for masks in undistorted/masks/car (or just masks/)
+        # We generally expect undistorted/masks/car
+        src_masks_root = undistorted_output / "masks"
+        if src_masks_root.exists():
+            # Find all subdirectories (e.g. 'car', 'person', etc.)
+            mask_categories = [p for p in src_masks_root.iterdir() if p.is_dir()]
+            
+            for category_dir in mask_categories:
+                category_name = category_dir.name
+                mask_files = sorted([p for p in category_dir.iterdir() if p.is_file()])
+                
+                if not mask_files:
+                    continue
+
+                print(f"Downscaling {len(mask_files)} masks for category '{category_name}'...")
+
+                for factor in downscale_factors:
+                    # Structure: undistorted/masks_{factor}/{category_name}
+                    dst_root = undistorted_output / f"masks_{factor}"
+                    dst_dir = dst_root / category_name
+                    dst_dir.mkdir(exist_ok=True, parents=True)
+                    print(f"  - Factor {factor}: Saving to {dst_dir}...")
+
+                    for mask_path in mask_files:
+                        mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)
+                        if mask is None:
+                            continue
+
+                        h, w = mask.shape[:2]
+                        new_h, new_w = h // factor, w // factor
+
+                        # Resize NEAREST to keep binary nature (or close to it)
+                        mask_resized = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+
+                        cv2.imwrite(str(dst_dir / mask_path.name), mask_resized)
 
 
 def export_reconstruction(sparse_path, output_path):
@@ -1484,14 +1553,21 @@ def main():
         help="Mapper usage (default: glomap)",
     )
     parser.add_argument(
-        "--undistort",
+        "--skip-undistort",
         action="store_true",
-        help="Undistort images after reconstruction (outputs to output/undistorted)",
+        help="Skip undistortion of images after reconstruction (Undistortion is now default).",
     )
     parser.add_argument(
         "--normalize",
         action="store_true",
         help="Normalize scene to unit sphere (centered and scaled)",
+    )
+    parser.add_argument(
+        "--downscale_factors",
+        type=int,
+        nargs="+",
+        default=[],
+        help="Additional downscale factors for undistorted images/masks (e.g. 2 4 8). Creates images_2, images_4, etc.",
     )
     parser.add_argument(
         "--hybrid",
@@ -1630,7 +1706,7 @@ def main():
              flags.append("Warning: Viz ignored for LoFTR")
         else:
              flags.append("🎨 Visualization")
-    if args.undistort:
+    if not args.skip_undistort:
         flags.append("📐 Undistort")
     if args.align_method != "disabled":
         flags.append(f"📐 Align: {args.align_method}")
@@ -1713,8 +1789,13 @@ def main():
         print("Exporting reconstruction immediately...")
         export_reconstruction(sparse_output, output_path)
 
-        if args.undistort:
-            run_undistortion(sparse_output, dataset_path, output_path)
+        if not args.skip_undistort:
+            run_undistortion(
+                sparse_output,
+                dataset_path,
+                output_path,
+                downscale_factors=args.downscale_factors,
+            )
 
         # COVISIBILITY REFINEMENT (Second Pass)
         if args.covisibility:
@@ -1812,7 +1893,12 @@ def main():
 
     if args.stage == "undistort":
         sparse_output = output_path / "sparse"
-        run_undistortion(sparse_output, dataset_path, output_path)
+        run_undistortion(
+            sparse_output,
+            dataset_path,
+            output_path,
+            downscale_factors=args.downscale_factors,
+        )
 
     print_summary(
         start_time,
