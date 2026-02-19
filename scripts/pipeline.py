@@ -75,45 +75,45 @@ def setup_paths(args):
 #     The mask is expected to be passed in the 'data' dictionary.
 #     """
 #     from lightglue.aliked import ALIKED
-# 
+#
 #     # Avoid double patching
 #     if getattr(ALIKED, "_is_patched_for_masking", False):
 #         return
-# 
+#
 #     original_forward = ALIKED.forward
-# 
+#
 #     def masked_forward(self, data):
 #         image = data["image"]
 #         # Handle grayscale if needed (ALIKED expects RGB usually)
 #         if image.shape[1] == 1:
 #             from kornia.color import grayscale_to_rgb
-# 
+#
 #             image = grayscale_to_rgb(image)
-# 
+#
 #         feature_map, score_map = self.extract_dense_map(image)
-# 
+#
 #         # --- MASK INJECTION START ---
 #         if "mask" in data and data["mask"] is not None:
 #             mask = data["mask"]
 #             # mask: Bx1xHxW. score_map: Bx1xH'xW'
-# 
+#
 #             # Interpolate mask to match score_map dimensions if needed
 #             if mask.shape[-2:] != score_map.shape[-2:]:
 #                 mask = torch.nn.functional.interpolate(
 #                     mask, size=score_map.shape[-2:], mode="nearest"
 #                 )
-# 
+#
 #             # Apply mask: Set scores of masked areas (1) to -infinity
 #             # Ensure mask is on the same device
 #             mask = mask.to(score_map.device)
 #             score_map = score_map.masked_fill(mask > 0.5, float("-inf"))
 #         # --- MASK INJECTION END ---
-# 
+#
 #         keypoints, kptscores, scoredispersitys = self.dkd(
 #             score_map, image_size=data.get("image_size")
 #         )
 #         descriptors, offsets = self.desc_head(feature_map, keypoints)
-# 
+#
 #         _, _, h, w = image.shape
 #         wh = torch.tensor([w - 1, h - 1], device=image.device)
 #         return {
@@ -121,7 +121,7 @@ def setup_paths(args):
 #             "descriptors": torch.stack(descriptors),
 #             "keypoint_scores": torch.stack(kptscores),
 #         }
-# 
+#
 #     ALIKED.forward = masked_forward
 #     ALIKED._is_patched_for_masking = True
 #     print("✅ ALIKED monkey-patched for masking support.")
@@ -155,13 +155,13 @@ def setup_paths(args):
 #         except ImportError:
 #             print("❌ Error: Could not import SuperPoint for monkey patching.")
 #             return
-# 
+#
 #     # Avoid double patching
 #     if getattr(SuperPoint, "_is_patched_for_masking", False):
 #         return
-# 
+#
 #     original_forward = SuperPoint.forward
-# 
+#
 #     def masked_forward(self, data):
 #         """Compute keypoints, scores, descriptors for image with masking support"""
 #         # Shared Encoder
@@ -170,7 +170,7 @@ def setup_paths(args):
 #             # Convert RGB to Grayscale for SuperPoint (which expects 1 channel)
 #             scale = image.new_tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1)
 #             image = (image * scale).sum(dim=1, keepdim=True)
-# 
+#
 #         x = self.relu(self.conv1a(image))
 #         x = self.relu(self.conv1b(x))
 #         x = self.pool(x)
@@ -182,7 +182,7 @@ def setup_paths(args):
 #         x = self.pool(x)
 #         x = self.relu(self.conv4a(x))
 #         x = self.relu(self.conv4b(x))
-# 
+#
 #         # Compute the dense keypoint scores
 #         cPa = self.relu(self.convPa(x))
 #         scores = self.convPb(cPa)
@@ -190,26 +190,26 @@ def setup_paths(args):
 #         b, _, h, w = scores.shape
 #         scores = scores.permute(0, 2, 3, 1).reshape(b, h, w, 8, 8)
 #         scores = scores.permute(0, 1, 3, 2, 4).reshape(b, h * 8, w * 8)
-# 
+#
 #         # --- MASK INJECTION START ---
 #         if "mask" in data and data["mask"] is not None:
 #             mask = data["mask"]
 #             # mask should be Bx1xHxW (or similar). scores is Bx(H*8)x(W*8)
 #             # data['image'] was resized, mask should match that size potentially?
 #             # or mask is passed in matching data['image'] size.
-# 
+#
 #             # scores is at full resolution (H*8, W*8) which matches input image size
-# 
+#
 #             if mask.shape[-2:] != scores.shape[-2:]:
 #                 mask = torch.nn.functional.interpolate(
 #                     mask, size=scores.shape[-2:], mode="nearest"
 #                 )
-# 
+#
 #             mask = mask.to(scores.device)
 #             # Squeeze channel dim if present for broadcasting
 #             if mask.dim() == 4:
 #                 mask = mask.squeeze(1)
-# 
+#
 #             # Apply mask: Set scores to 0 (or very low) where mask > 0.5
 #             # scores are probabilities [0, 1] after softmax? No, wait.
 #             # The original code:
@@ -218,18 +218,18 @@ def setup_paths(args):
 #             # We sliced [:, :-1] so we have 64 channels.
 #             # Then reshaped to (b, h*8, w*8).
 #             # These are probabilities of "pointness".
-# 
+#
 #             scores = scores.masked_fill(mask > 0.5, 0.0)
 #         # --- MASK INJECTION END ---
-# 
+#
 #         scores = simple_nms(scores, self.config["nms_radius"])
-# 
+#
 #         # Extract keypoints
 #         keypoints = [
 #             torch.nonzero(s > self.config["keypoint_threshold"]) for s in scores
 #         ]
 #         scores = [s[tuple(k.t())] for s, k in zip(scores, keypoints)]
-# 
+#
 #         # Discard keypoints near the image borders
 #         keypoints, scores = list(
 #             zip(
@@ -239,7 +239,7 @@ def setup_paths(args):
 #                 ]
 #             )
 #         )
-# 
+#
 #         # Keep the k keypoints with highest score
 #         if self.config["max_keypoints"] >= 0:
 #             keypoints, scores = list(
@@ -250,27 +250,27 @@ def setup_paths(args):
 #                     ]
 #                 )
 #             )
-# 
+#
 #         # Convert (h, w) to (x, y)
 #         keypoints = [torch.flip(k, [1]).float() for k in keypoints]
-# 
+#
 #         # Compute the dense descriptors
 #         cDa = self.relu(self.convDa(x))
 #         descriptors = self.convDb(cDa)
 #         descriptors = torch.nn.functional.normalize(descriptors, p=2, dim=1)
-# 
+#
 #         # Extract descriptors
 #         descriptors = [
 #             sample_descriptors(k[None], d[None], 8)[0]
 #             for k, d in zip(keypoints, descriptors)
 #         ]
-# 
+#
 #         return {
 #             "keypoints": keypoints,
 #             "scores": scores,
 #             "descriptors": descriptors,
 #         }
-# 
+#
 #     SuperPoint.forward = masked_forward
 #     SuperPoint._is_patched_for_masking = True
 #     print("✅ SuperPoint monkey-patched for masking support.")
@@ -300,7 +300,9 @@ def run_feature_extraction(
     print(f"Extracting features to {feature_path} using {feature_type}...")
 
     # If masking is enabled OR visualization is requested
-    if keypoints_viz: # (use_mask and feature_type in ["aliked", "superpoint"]) or keypoints_viz:
+    if (
+        keypoints_viz
+    ):  # (use_mask and feature_type in ["aliked", "superpoint"]) or keypoints_viz:
         print(
             f"DEBUG: use_mask={use_mask}, keypoints_viz={keypoints_viz}, dataset_path={dataset_path}"
         )
@@ -409,7 +411,7 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
         if mask_dir:
             pass
         #     current_mask_path = mask_dir / name
-        # 
+        #
         #     # If exact match doesn't exist, try replacing extension with common ones
         #     if not current_mask_path.exists():
         #         for ext in [".png", ".jpg", ".jpeg", ".bmp", ".tif"]:
@@ -417,7 +419,7 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
         #             if test_path.exists():
         #                 current_mask_path = test_path
         #                 break
-        # 
+        #
         #     if current_mask_path and current_mask_path.exists():
         #         # Read mask
         #         # Masks are often 1-channel or 3-channel. We want 1-channel binary-like.
@@ -426,37 +428,37 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
         #             # Resize mask to match original image size (data['original_size'])
         #             # data['image'] is already resized by ImageDataset potentially.
         #             # data['original_size'] is the size BEFORE preprocessing resize.
-        # 
+        #
         #             # However, the 'image' tensor passed to the model has been resized.
         #             # We should match the 'image' tensor size.
-        # 
+        #
         #             image_tensor_shape = data["image"].shape[-2:]  # H, W
         #             mask_resized = cv2.resize(
         #                 mask_np,
         #                 (image_tensor_shape[1], image_tensor_shape[0]),
         #                 interpolation=cv2.INTER_NEAREST,
         #             )
-        # 
+        #
         #             # Normalize to 0-1 and convert to tensor
         #             # 255 = mask, 0 = background?
         #             # User said "masques des vitres de SAM". Normally SAM outputs binary masks.
         #             # We accept any non-zero as mask.
         #             mask_tensor = torch.from_numpy(mask_resized).float() / 255.0
         #             mask_tensor = (mask_tensor > 0.5).float()  # Binary
-        # 
+        #
         #             # Add to batch (B=1) and channel (C=1)
         #             mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0).to(device)
-        # 
+        #
         #             # Add to input
         #             # Note: data['image'] is a batch from DataLoader, so it's [B, C, H, W]
         #             # We need to construct the input dict for the model
         #             image_input = data["image"].to(device, non_blocking=True)
-        # 
+        #
         #             pred_input = {"image": image_input, "mask": mask_tensor}
-        # 
+        #
         #             # For SuperPoint, we need to ensure the mask is passed correctly
         #             # The patched forward expects 'mask' in data.
-        # 
+        #
         #             # Run Model
         #             with torch.no_grad():
         #                 pred = model(pred_input)
@@ -913,7 +915,7 @@ def run_mapping(
             "--skip_pruning",
             "0",
             "--Thresholds.min_inlier_num",
-            "15",
+            "25",
         ]
         subprocess.run(cmd, check=True)
     elif mapper == "colmap":
