@@ -148,7 +148,7 @@ pixi run adjust-images --input /path/to/images --output /path/to/output
 | `--skip-undistort`  | Skip undistortion after reconstruction. Undistortion is now default (crucial for GS). | `False`           |
 | `--downscale_factors` | Additional downscale factors for undistorted images/masks (e.g. `2 4`).               | `[]`              |
 | `--normalize`         | Normalize scene to unit sphere (centered and scaled).                                 | `False`           |
-| `--align_method`      | Model alignment: `MANHATTAN-WORLD` (default), `IMAGE-ORIENTATION`, or `disabled`.     | `disabled`        |
+| `--align_method`      | Model alignment: `MANHATTAN-WORLD` (default), `IMAGE-ORIENTATION`, or `disabled`.     | `IMAGE-ORIENTATION`|
 | `--covisibility`      | Enable **Two-Pass Reconstruction** using 3D model to find extra matches.              | `False`           |
 | `--covisibility_num`  | Number of extra pairs per image during covisibility refinement.                       | `10`              |
 | `--additional_pairs`  | Path to a custom `pairs.txt` file to merge into matching.                             | `None`            |

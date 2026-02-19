@@ -24,9 +24,9 @@ if external_dir.exists():
 from hloc import (
     extract_features,
     match_features,
+    pairs_from_covisibility,
     pairs_from_exhaustive,
     pairs_from_retrieval,
-    pairs_from_covisibility,
     reconstruction,
 )
 
@@ -49,7 +49,7 @@ FEATURE_CONFIGS = {
         "matcher": "adalam",
     },
     "loftr": {
-        "feature": "dummy", # LoFTR is detector-free, no separate feature extraction
+        "feature": "dummy",  # LoFTR is detector-free, no separate feature extraction
         "matcher": "loftr",
     },
 }
@@ -69,200 +69,225 @@ def setup_paths(args):
     return dataset_path, images_path, cameras_path, output_path
 
 
-def setup_aliked_masking():
-    """
-    Monkey-patch ALIKED to support masking.
-    The mask is expected to be passed in the 'data' dictionary.
-    """
-    from lightglue.aliked import ALIKED
+# def setup_aliked_masking():
+#     """
+#     Monkey-patch ALIKED to support masking.
+#     The mask is expected to be passed in the 'data' dictionary.
+#     """
+#     from lightglue.aliked import ALIKED
+# 
+#     # Avoid double patching
+#     if getattr(ALIKED, "_is_patched_for_masking", False):
+#         return
+# 
+#     original_forward = ALIKED.forward
+# 
+#     def masked_forward(self, data):
+#         image = data["image"]
+#         # Handle grayscale if needed (ALIKED expects RGB usually)
+#         if image.shape[1] == 1:
+#             from kornia.color import grayscale_to_rgb
+# 
+#             image = grayscale_to_rgb(image)
+# 
+#         feature_map, score_map = self.extract_dense_map(image)
+# 
+#         # --- MASK INJECTION START ---
+#         if "mask" in data and data["mask"] is not None:
+#             mask = data["mask"]
+#             # mask: Bx1xHxW. score_map: Bx1xH'xW'
+# 
+#             # Interpolate mask to match score_map dimensions if needed
+#             if mask.shape[-2:] != score_map.shape[-2:]:
+#                 mask = torch.nn.functional.interpolate(
+#                     mask, size=score_map.shape[-2:], mode="nearest"
+#                 )
+# 
+#             # Apply mask: Set scores of masked areas (1) to -infinity
+#             # Ensure mask is on the same device
+#             mask = mask.to(score_map.device)
+#             score_map = score_map.masked_fill(mask > 0.5, float("-inf"))
+#         # --- MASK INJECTION END ---
+# 
+#         keypoints, kptscores, scoredispersitys = self.dkd(
+#             score_map, image_size=data.get("image_size")
+#         )
+#         descriptors, offsets = self.desc_head(feature_map, keypoints)
+# 
+#         _, _, h, w = image.shape
+#         wh = torch.tensor([w - 1, h - 1], device=image.device)
+#         return {
+#             "keypoints": wh * (torch.stack(keypoints) + 1) / 2.0,
+#             "descriptors": torch.stack(descriptors),
+#             "keypoint_scores": torch.stack(kptscores),
+#         }
+# 
+#     ALIKED.forward = masked_forward
+#     ALIKED._is_patched_for_masking = True
+#     print("✅ ALIKED monkey-patched for masking support.")
 
-    # Avoid double patching
-    if getattr(ALIKED, "_is_patched_for_masking", False):
-        return
 
-    original_forward = ALIKED.forward
-
-    def masked_forward(self, data):
-        image = data["image"]
-        # Handle grayscale if needed (ALIKED expects RGB usually)
-        if image.shape[1] == 1:
-            from kornia.color import grayscale_to_rgb
-
-            image = grayscale_to_rgb(image)
-
-        feature_map, score_map = self.extract_dense_map(image)
-
-        # --- MASK INJECTION START ---
-        if "mask" in data and data["mask"] is not None:
-            mask = data["mask"]
-            # mask: Bx1xHxW. score_map: Bx1xH'xW'
-
-            # Interpolate mask to match score_map dimensions if needed
-            if mask.shape[-2:] != score_map.shape[-2:]:
-                mask = torch.nn.functional.interpolate(
-                    mask, size=score_map.shape[-2:], mode="nearest"
-                )
-
-            # Apply mask: Set scores of masked areas (1) to -infinity
-            # Ensure mask is on the same device
-            mask = mask.to(score_map.device)
-            score_map = score_map.masked_fill(mask > 0.5, float("-inf"))
-        # --- MASK INJECTION END ---
-
-        keypoints, kptscores, scoredispersitys = self.dkd(
-            score_map, image_size=data.get("image_size")
-        )
-        descriptors, offsets = self.desc_head(feature_map, keypoints)
-
-        _, _, h, w = image.shape
-        wh = torch.tensor([w - 1, h - 1], device=image.device)
-        return {
-            "keypoints": wh * (torch.stack(keypoints) + 1) / 2.0,
-            "descriptors": torch.stack(descriptors),
-            "keypoint_scores": torch.stack(kptscores),
-        }
-
-    ALIKED.forward = masked_forward
-    ALIKED._is_patched_for_masking = True
-    print("✅ ALIKED monkey-patched for masking support.")
-
-
-def setup_superpoint_masking():
-    """
-    Monkey-patch SuperPoint to support masking.
-    The mask is expected to be passed in the 'data' dictionary as 'mask'.
-    """
-    try:
-        from SuperGluePretrainedNetwork.models.superpoint import SuperPoint, simple_nms, remove_borders, top_k_keypoints, sample_descriptors
-    except ImportError:
-        # Fallback if the path is slightly different or if using hloc's version which might vendor it differently
-        # But given the file structure viewed earlier, this should work if paths are set up.
-        # scripts/pipeline.py adds 'external' to sys.path
-        try:
-             from models.superpoint import SuperPoint, simple_nms, remove_borders, top_k_keypoints, sample_descriptors
-        except ImportError:
-            print("❌ Error: Could not import SuperPoint for monkey patching.")
-            return
-
-    # Avoid double patching
-    if getattr(SuperPoint, "_is_patched_for_masking", False):
-        return
-
-    original_forward = SuperPoint.forward
-
-    def masked_forward(self, data):
-        """ Compute keypoints, scores, descriptors for image with masking support """
-        # Shared Encoder
-        image = data['image']
-        if image.shape[1] == 3:
-            # Convert RGB to Grayscale for SuperPoint (which expects 1 channel)
-            scale = image.new_tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1)
-            image = (image * scale).sum(dim=1, keepdim=True)
-            
-        x = self.relu(self.conv1a(image))
-        x = self.relu(self.conv1b(x))
-        x = self.pool(x)
-        x = self.relu(self.conv2a(x))
-        x = self.relu(self.conv2b(x))
-        x = self.pool(x)
-        x = self.relu(self.conv3a(x))
-        x = self.relu(self.conv3b(x))
-        x = self.pool(x)
-        x = self.relu(self.conv4a(x))
-        x = self.relu(self.conv4b(x))
-
-        # Compute the dense keypoint scores
-        cPa = self.relu(self.convPa(x))
-        scores = self.convPb(cPa)
-        scores = torch.nn.functional.softmax(scores, 1)[:, :-1]
-        b, _, h, w = scores.shape
-        scores = scores.permute(0, 2, 3, 1).reshape(b, h, w, 8, 8)
-        scores = scores.permute(0, 1, 3, 2, 4).reshape(b, h*8, w*8)
-        
-        # --- MASK INJECTION START ---
-        if "mask" in data and data["mask"] is not None:
-            mask = data["mask"]
-            # mask should be Bx1xHxW (or similar). scores is Bx(H*8)x(W*8)
-            # data['image'] was resized, mask should match that size potentially? 
-            # or mask is passed in matching data['image'] size.
-            
-            # scores is at full resolution (H*8, W*8) which matches input image size
-            
-            if mask.shape[-2:] != scores.shape[-2:]:
-                mask = torch.nn.functional.interpolate(
-                    mask, size=scores.shape[-2:], mode="nearest"
-                )
-            
-            mask = mask.to(scores.device)
-            # Squeeze channel dim if present for broadcasting
-            if mask.dim() == 4:
-                mask = mask.squeeze(1)
-            
-            # Apply mask: Set scores to 0 (or very low) where mask > 0.5
-            # scores are probabilities [0, 1] after softmax? No, wait.
-            # The original code:
-            # scores = torch.nn.functional.softmax(scores, 1)[:, :-1]
-            # This is channel-wise softmax. The last channel is "dustbin" (no keypoint).
-            # We sliced [:, :-1] so we have 64 channels. 
-            # Then reshaped to (b, h*8, w*8).
-            # These are probabilities of "pointness".
-            
-            scores = scores.masked_fill(mask > 0.5, 0.0)
-        # --- MASK INJECTION END ---
-
-        scores = simple_nms(scores, self.config['nms_radius'])
-
-        # Extract keypoints
-        keypoints = [
-            torch.nonzero(s > self.config['keypoint_threshold'])
-            for s in scores]
-        scores = [s[tuple(k.t())] for s, k in zip(scores, keypoints)]
-
-        # Discard keypoints near the image borders
-        keypoints, scores = list(zip(*[
-            remove_borders(k, s, self.config['remove_borders'], h*8, w*8)
-            for k, s in zip(keypoints, scores)]))
-
-        # Keep the k keypoints with highest score
-        if self.config['max_keypoints'] >= 0:
-            keypoints, scores = list(zip(*[
-                top_k_keypoints(k, s, self.config['max_keypoints'])
-                for k, s in zip(keypoints, scores)]))
-
-        # Convert (h, w) to (x, y)
-        keypoints = [torch.flip(k, [1]).float() for k in keypoints]
-
-        # Compute the dense descriptors
-        cDa = self.relu(self.convDa(x))
-        descriptors = self.convDb(cDa)
-        descriptors = torch.nn.functional.normalize(descriptors, p=2, dim=1)
-
-        # Extract descriptors
-        descriptors = [sample_descriptors(k[None], d[None], 8)[0]
-                       for k, d in zip(keypoints, descriptors)]
-
-        return {
-            'keypoints': keypoints,
-            'scores': scores,
-            'descriptors': descriptors,
-        }
-
-    SuperPoint.forward = masked_forward
-    SuperPoint._is_patched_for_masking = True
-    print("✅ SuperPoint monkey-patched for masking support.")
+# def setup_superpoint_masking():
+#     """
+#     Monkey-patch SuperPoint to support masking.
+#     The mask is expected to be passed in the 'data' dictionary as 'mask'.
+#     """
+#     try:
+#         from SuperGluePretrainedNetwork.models.superpoint import (
+#             SuperPoint,
+#             remove_borders,
+#             sample_descriptors,
+#             simple_nms,
+#             top_k_keypoints,
+#         )
+#     except ImportError:
+#         # Fallback if the path is slightly different or if using hloc's version which might vendor it differently
+#         # But given the file structure viewed earlier, this should work if paths are set up.
+#         # scripts/pipeline.py adds 'external' to sys.path
+#         try:
+#             from models.superpoint import (
+#                 SuperPoint,
+#                 remove_borders,
+#                 sample_descriptors,
+#                 simple_nms,
+#                 top_k_keypoints,
+#             )
+#         except ImportError:
+#             print("❌ Error: Could not import SuperPoint for monkey patching.")
+#             return
+# 
+#     # Avoid double patching
+#     if getattr(SuperPoint, "_is_patched_for_masking", False):
+#         return
+# 
+#     original_forward = SuperPoint.forward
+# 
+#     def masked_forward(self, data):
+#         """Compute keypoints, scores, descriptors for image with masking support"""
+#         # Shared Encoder
+#         image = data["image"]
+#         if image.shape[1] == 3:
+#             # Convert RGB to Grayscale for SuperPoint (which expects 1 channel)
+#             scale = image.new_tensor([0.299, 0.587, 0.114]).view(1, 3, 1, 1)
+#             image = (image * scale).sum(dim=1, keepdim=True)
+# 
+#         x = self.relu(self.conv1a(image))
+#         x = self.relu(self.conv1b(x))
+#         x = self.pool(x)
+#         x = self.relu(self.conv2a(x))
+#         x = self.relu(self.conv2b(x))
+#         x = self.pool(x)
+#         x = self.relu(self.conv3a(x))
+#         x = self.relu(self.conv3b(x))
+#         x = self.pool(x)
+#         x = self.relu(self.conv4a(x))
+#         x = self.relu(self.conv4b(x))
+# 
+#         # Compute the dense keypoint scores
+#         cPa = self.relu(self.convPa(x))
+#         scores = self.convPb(cPa)
+#         scores = torch.nn.functional.softmax(scores, 1)[:, :-1]
+#         b, _, h, w = scores.shape
+#         scores = scores.permute(0, 2, 3, 1).reshape(b, h, w, 8, 8)
+#         scores = scores.permute(0, 1, 3, 2, 4).reshape(b, h * 8, w * 8)
+# 
+#         # --- MASK INJECTION START ---
+#         if "mask" in data and data["mask"] is not None:
+#             mask = data["mask"]
+#             # mask should be Bx1xHxW (or similar). scores is Bx(H*8)x(W*8)
+#             # data['image'] was resized, mask should match that size potentially?
+#             # or mask is passed in matching data['image'] size.
+# 
+#             # scores is at full resolution (H*8, W*8) which matches input image size
+# 
+#             if mask.shape[-2:] != scores.shape[-2:]:
+#                 mask = torch.nn.functional.interpolate(
+#                     mask, size=scores.shape[-2:], mode="nearest"
+#                 )
+# 
+#             mask = mask.to(scores.device)
+#             # Squeeze channel dim if present for broadcasting
+#             if mask.dim() == 4:
+#                 mask = mask.squeeze(1)
+# 
+#             # Apply mask: Set scores to 0 (or very low) where mask > 0.5
+#             # scores are probabilities [0, 1] after softmax? No, wait.
+#             # The original code:
+#             # scores = torch.nn.functional.softmax(scores, 1)[:, :-1]
+#             # This is channel-wise softmax. The last channel is "dustbin" (no keypoint).
+#             # We sliced [:, :-1] so we have 64 channels.
+#             # Then reshaped to (b, h*8, w*8).
+#             # These are probabilities of "pointness".
+# 
+#             scores = scores.masked_fill(mask > 0.5, 0.0)
+#         # --- MASK INJECTION END ---
+# 
+#         scores = simple_nms(scores, self.config["nms_radius"])
+# 
+#         # Extract keypoints
+#         keypoints = [
+#             torch.nonzero(s > self.config["keypoint_threshold"]) for s in scores
+#         ]
+#         scores = [s[tuple(k.t())] for s, k in zip(scores, keypoints)]
+# 
+#         # Discard keypoints near the image borders
+#         keypoints, scores = list(
+#             zip(
+#                 *[
+#                     remove_borders(k, s, self.config["remove_borders"], h * 8, w * 8)
+#                     for k, s in zip(keypoints, scores)
+#                 ]
+#             )
+#         )
+# 
+#         # Keep the k keypoints with highest score
+#         if self.config["max_keypoints"] >= 0:
+#             keypoints, scores = list(
+#                 zip(
+#                     *[
+#                         top_k_keypoints(k, s, self.config["max_keypoints"])
+#                         for k, s in zip(keypoints, scores)
+#                     ]
+#                 )
+#             )
+# 
+#         # Convert (h, w) to (x, y)
+#         keypoints = [torch.flip(k, [1]).float() for k in keypoints]
+# 
+#         # Compute the dense descriptors
+#         cDa = self.relu(self.convDa(x))
+#         descriptors = self.convDb(cDa)
+#         descriptors = torch.nn.functional.normalize(descriptors, p=2, dim=1)
+# 
+#         # Extract descriptors
+#         descriptors = [
+#             sample_descriptors(k[None], d[None], 8)[0]
+#             for k, d in zip(keypoints, descriptors)
+#         ]
+# 
+#         return {
+#             "keypoints": keypoints,
+#             "scores": scores,
+#             "descriptors": descriptors,
+#         }
+# 
+#     SuperPoint.forward = masked_forward
+#     SuperPoint._is_patched_for_masking = True
+#     print("✅ SuperPoint monkey-patched for masking support.")
 
 
 def run_feature_extraction(
     images_path,
     output_path,
     feature_type="superpoint",
-    use_mask=False,
+    # use_mask=False,
     dataset_path=None,
     keypoints_viz=False,
     resize_max=None,
     keypoint_threshold=None,
     nms_radius=None,
 ):
+    use_mask = False
     config = FEATURE_CONFIGS[feature_type]
     feature_path = output_path / "features.h5"
 
@@ -275,27 +300,28 @@ def run_feature_extraction(
     print(f"Extracting features to {feature_path} using {feature_type}...")
 
     # If masking is enabled OR visualization is requested
-    if (use_mask and feature_type in ["aliked", "superpoint"]) or keypoints_viz:
+    if keypoints_viz: # (use_mask and feature_type in ["aliked", "superpoint"]) or keypoints_viz:
         print(
             f"DEBUG: use_mask={use_mask}, keypoints_viz={keypoints_viz}, dataset_path={dataset_path}"
         )
-        if use_mask:
-            print("🎭 Masking enabled. Using custom extraction loop.")
-            if feature_type == "aliked":
-                setup_aliked_masking()
-            elif feature_type == "superpoint":
-                setup_superpoint_masking()
-            if dataset_path:
-                mask_path = dataset_path / "masks" / "window"
-                if not mask_path.exists():
-                    print(f"❌ Error: Mask directory not found at {mask_path}")
-                    sys.exit(1)
-            else:
-                print("❌ Error: dataset_path required for masking")
-                sys.exit(1)
-        else:
-            print("🎨 Visualization enabled (No Mask). Using custom extraction loop.")
-            mask_path = None  # No mask
+        mask_path = None
+        # if use_mask:
+        #     print("🎭 Masking enabled. Using custom extraction loop.")
+        #     if feature_type == "aliked":
+        #         setup_aliked_masking()
+        #     elif feature_type == "superpoint":
+        #         setup_superpoint_masking()
+        #     if dataset_path:
+        #         mask_path = dataset_path / "masks" / "window"
+        #         if not mask_path.exists():
+        #             print(f"❌ Error: Mask directory not found at {mask_path}")
+        #             sys.exit(1)
+        #     else:
+        #         print("❌ Error: dataset_path required for masking")
+        #         sys.exit(1)
+        # else:
+        print("🎨 Visualization enabled (No Mask). Using custom extraction loop.")
+        mask_path = None  # No mask
 
         # Inject viz flag into conf
         feature_conf["keypoints_viz"] = keypoints_viz
@@ -306,12 +332,14 @@ def run_feature_extraction(
 
         # Inject SuperPoint specific parameters if provided
         if feature_type == "superpoint":
-             if keypoint_threshold is not None:
-                 feature_conf["model"]["keypoint_threshold"] = keypoint_threshold
-                 print(f"🔧 SuperPoint Override: keypoint_threshold = {keypoint_threshold}")
-             if nms_radius is not None:
-                 feature_conf["model"]["nms_radius"] = nms_radius
-                 print(f"🔧 SuperPoint Override: nms_radius = {nms_radius}")
+            if keypoint_threshold is not None:
+                feature_conf["model"]["keypoint_threshold"] = keypoint_threshold
+                print(
+                    f"🔧 SuperPoint Override: keypoint_threshold = {keypoint_threshold}"
+                )
+            if nms_radius is not None:
+                feature_conf["model"]["nms_radius"] = nms_radius
+                print(f"🔧 SuperPoint Override: nms_radius = {nms_radius}")
 
         custom_extract_features(feature_conf, images_path, mask_path, feature_path)
     else:
@@ -322,12 +350,14 @@ def run_feature_extraction(
 
         # Inject SuperPoint specific parameters if provided
         if feature_type == "superpoint":
-             if keypoint_threshold is not None:
-                 feature_conf["model"]["keypoint_threshold"] = keypoint_threshold
-                 print(f"🔧 SuperPoint Override: keypoint_threshold = {keypoint_threshold}")
-             if nms_radius is not None:
-                 feature_conf["model"]["nms_radius"] = nms_radius
-                 print(f"🔧 SuperPoint Override: nms_radius = {nms_radius}")
+            if keypoint_threshold is not None:
+                feature_conf["model"]["keypoint_threshold"] = keypoint_threshold
+                print(
+                    f"🔧 SuperPoint Override: keypoint_threshold = {keypoint_threshold}"
+                )
+            if nms_radius is not None:
+                feature_conf["model"]["nms_radius"] = nms_radius
+                print(f"🔧 SuperPoint Override: nms_radius = {nms_radius}")
 
         extract_features.main(feature_conf, images_path, feature_path=feature_path)
 
@@ -338,14 +368,14 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
     """
     Custom version of hloc.extract_features.main to include masks.
     """
+    import cv2  # Ensure cv2 is available for mask reading
     import h5py
     import torch
     from hloc import extractors, logger
+    from hloc.extract_features import ImageDataset, resize_image
     from hloc.utils.base_model import dynamic_load
     from hloc.utils.io import list_h5_names, read_image
-    from hloc.extract_features import ImageDataset, resize_image
     from tqdm import tqdm
-    import cv2  # Ensure cv2 is available for mask reading
 
     logger.info(f"Extracting features with masks from {mask_dir}...")
 
@@ -377,70 +407,71 @@ def custom_extract_features(conf, image_dir, mask_dir, feature_path):
         mask = None
 
         if mask_dir:
-            current_mask_path = mask_dir / name
-
-            # If exact match doesn't exist, try replacing extension with common ones
-            if not current_mask_path.exists():
-                for ext in [".png", ".jpg", ".jpeg", ".bmp", ".tif"]:
-                    test_path = mask_dir / (Path(name).stem + ext)
-                    if test_path.exists():
-                        current_mask_path = test_path
-                        break
-
-            if current_mask_path and current_mask_path.exists():
-                # Read mask
-                # Masks are often 1-channel or 3-channel. We want 1-channel binary-like.
-                mask_np = cv2.imread(str(current_mask_path), cv2.IMREAD_GRAYSCALE)
-                if mask_np is not None:
-                    # Resize mask to match original image size (data['original_size'])
-                    # data['image'] is already resized by ImageDataset potentially.
-                    # data['original_size'] is the size BEFORE preprocessing resize.
-
-                    # However, the 'image' tensor passed to the model has been resized.
-                    # We should match the 'image' tensor size.
-
-                    image_tensor_shape = data["image"].shape[-2:]  # H, W
-                    mask_resized = cv2.resize(
-                        mask_np,
-                        (image_tensor_shape[1], image_tensor_shape[0]),
-                        interpolation=cv2.INTER_NEAREST,
-                    )
-
-                    # Normalize to 0-1 and convert to tensor
-                    # 255 = mask, 0 = background?
-                    # User said "masques des vitres de SAM". Normally SAM outputs binary masks.
-                    # We accept any non-zero as mask.
-                    mask_tensor = torch.from_numpy(mask_resized).float() / 255.0
-                    mask_tensor = (mask_tensor > 0.5).float()  # Binary
-
-                    # Add to batch (B=1) and channel (C=1)
-                    mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0).to(device)
-
-                    # Add to input
-                    # Note: data['image'] is a batch from DataLoader, so it's [B, C, H, W]
-                    # We need to construct the input dict for the model
-                    image_input = data["image"].to(device, non_blocking=True)
-
-                    pred_input = {"image": image_input, "mask": mask_tensor}
-                    
-                    # For SuperPoint, we need to ensure the mask is passed correctly
-                    # The patched forward expects 'mask' in data.
-
-                    # Run Model
-                    with torch.no_grad():
-                        pred = model(pred_input)
-                else:
-                    if mask_dir:
-                        logger.warning(f"Could not read mask: {current_mask_path}")
-                    with torch.no_grad():
-                        pred = model(
-                            {"image": data["image"].to(device, non_blocking=True)}
-                        )
-        else:
-            if mask_dir:
-                logger.warning(f"Mask not found for {name} at {mask_dir}")
-            with torch.no_grad():
-                pred = model({"image": data["image"].to(device, non_blocking=True)})
+            pass
+        #     current_mask_path = mask_dir / name
+        # 
+        #     # If exact match doesn't exist, try replacing extension with common ones
+        #     if not current_mask_path.exists():
+        #         for ext in [".png", ".jpg", ".jpeg", ".bmp", ".tif"]:
+        #             test_path = mask_dir / (Path(name).stem + ext)
+        #             if test_path.exists():
+        #                 current_mask_path = test_path
+        #                 break
+        # 
+        #     if current_mask_path and current_mask_path.exists():
+        #         # Read mask
+        #         # Masks are often 1-channel or 3-channel. We want 1-channel binary-like.
+        #         mask_np = cv2.imread(str(current_mask_path), cv2.IMREAD_GRAYSCALE)
+        #         if mask_np is not None:
+        #             # Resize mask to match original image size (data['original_size'])
+        #             # data['image'] is already resized by ImageDataset potentially.
+        #             # data['original_size'] is the size BEFORE preprocessing resize.
+        # 
+        #             # However, the 'image' tensor passed to the model has been resized.
+        #             # We should match the 'image' tensor size.
+        # 
+        #             image_tensor_shape = data["image"].shape[-2:]  # H, W
+        #             mask_resized = cv2.resize(
+        #                 mask_np,
+        #                 (image_tensor_shape[1], image_tensor_shape[0]),
+        #                 interpolation=cv2.INTER_NEAREST,
+        #             )
+        # 
+        #             # Normalize to 0-1 and convert to tensor
+        #             # 255 = mask, 0 = background?
+        #             # User said "masques des vitres de SAM". Normally SAM outputs binary masks.
+        #             # We accept any non-zero as mask.
+        #             mask_tensor = torch.from_numpy(mask_resized).float() / 255.0
+        #             mask_tensor = (mask_tensor > 0.5).float()  # Binary
+        # 
+        #             # Add to batch (B=1) and channel (C=1)
+        #             mask_tensor = mask_tensor.unsqueeze(0).unsqueeze(0).to(device)
+        # 
+        #             # Add to input
+        #             # Note: data['image'] is a batch from DataLoader, so it's [B, C, H, W]
+        #             # We need to construct the input dict for the model
+        #             image_input = data["image"].to(device, non_blocking=True)
+        # 
+        #             pred_input = {"image": image_input, "mask": mask_tensor}
+        # 
+        #             # For SuperPoint, we need to ensure the mask is passed correctly
+        #             # The patched forward expects 'mask' in data.
+        # 
+        #             # Run Model
+        #             with torch.no_grad():
+        #                 pred = model(pred_input)
+        #         else:
+        #             if mask_dir:
+        #                 logger.warning(f"Could not read mask: {current_mask_path}")
+        #             with torch.no_grad():
+        #                 pred = model(
+        #                     {"image": data["image"].to(device, non_blocking=True)}
+        #                 )
+        # else:
+        #     if mask_dir:
+        #         logger.warning(f"Mask not found for {name} at {mask_dir}")
+        with torch.no_grad():
+            pred = model({"image": data["image"].to(device, non_blocking=True)})
 
         # --- End Custom Logic, continue with HLOC saving ---
 
@@ -561,10 +592,10 @@ def run_matching(
     resize_max=None,
 ):
     config = FEATURE_CONFIGS[feature_type]
-    
+
     if feature_type != "loftr":
         matcher_conf = match_features.confs[config["matcher"]]
-    
+
     match_path = output_path / "matches.h5"
     pairs_path = output_path / "pairs.txt"
 
@@ -576,7 +607,7 @@ def run_matching(
         pairs_from_exhaustive.main(pairs_path, features=feature_path)
     elif matching_type == "retrieval":
         print(f"Extracting global features for retrieval...")
-        global_conf = extract_features.confs["netvlad"]
+        global_conf = extract_features.confs["megaloc"]
         global_features_path = output_path / "global_features.h5"
         extract_features.main(
             global_conf, images_path, feature_path=global_features_path
@@ -592,7 +623,7 @@ def run_matching(
         generate_sequential_pairs(images_path, pairs_seq, window_size=window_size)
 
         print("Generating retrieval pairs...")
-        global_conf = extract_features.confs["netvlad"]
+        global_conf = extract_features.confs["megaloc"]
         global_features_path = output_path / "global_features.h5"
         extract_features.main(
             global_conf, images_path, feature_path=global_features_path
@@ -616,18 +647,18 @@ def run_matching(
             )
         else:
             print(f"ℹ️  No labeled frames detected. Using classical Global Retrieval.")
-            
+
             # Clamp num_matched to avoid topk error
             num_images = len(images_all)
             if num_matched > num_images:
-                print(f"⚠️  Retrieval num ({num_matched}) > num_images ({num_images}). Clamping to {num_images}.")
+                print(
+                    f"⚠️  Retrieval num ({num_matched}) > num_images ({num_images}). Clamping to {num_images}."
+                )
                 num_matched = num_images
 
             pairs_from_retrieval.main(
                 global_features_path, pairs_ret, num_matched=num_matched
             )
-
-
 
         # Merge pairs
         pairs = set()
@@ -647,7 +678,9 @@ def run_matching(
         # But wait, match_dense NEEDS pairs.
         # If the user selected loftr without an explicit matching strategy, what should we do?
         # Default to sequential?
-        print("⚠️  Matching type 'loftr' implied. Generating sequential pairs by default...")
+        print(
+            "⚠️  Matching type 'loftr' implied. Generating sequential pairs by default..."
+        )
         pairs_seq = output_path / "pairs_sequential.txt"
         generate_sequential_pairs(images_path, pairs_seq, window_size=window_size)
     else:
@@ -656,7 +689,7 @@ def run_matching(
 
     # --- LOAD PAIRS INTO SET ---
     # Ensure 'pairs' set is populated from the generated file if it wasn't already (e.g. by hybrid mode)
-    if 'pairs' not in locals():
+    if "pairs" not in locals():
         pairs = set()
         if pairs_path.exists():
             with open(pairs_path, "r") as f:
@@ -664,9 +697,9 @@ def run_matching(
                     parts = line.strip().split()
                     if len(parts) >= 2:
                         p1, p2 = parts[0], parts[1]
-                        if p1 > p2: p1, p2 = p2, p1
+                        if p1 > p2:
+                            p1, p2 = p2, p1
                         pairs.add((p1, p2))
-
 
     # --- MERGE ADDITIONAL PAIRS (User Provided) ---
     if additional_pairs_path and os.path.exists(additional_pairs_path):
@@ -677,7 +710,8 @@ def run_matching(
                 parts = line.strip().split()
                 if len(parts) >= 2:
                     p1, p2 = parts[0], parts[1]
-                    if p1 > p2: p1, p2 = p2, p1
+                    if p1 > p2:
+                        p1, p2 = p2, p1
                     if (p1, p2) not in pairs:
                         pairs.add((p1, p2))
                         added_count += 1
@@ -690,15 +724,15 @@ def run_matching(
 
     # --- EXECUTE MATCHING ---
     # Now that pairs_path is generated and fully merged, run the actual matching.
-    
+
     if feature_type == "loftr":
         print("⚡ Running LoFTR Dense Matching...")
         from hloc import match_dense
-        
+
         conf = match_dense.confs["loftr"]
         if resize_max:
-             conf["preprocessing"]["resize_max"] = resize_max
-             print(f"📏 LoFTR Resolution Override: resize_max = {resize_max}")
+            conf["preprocessing"]["resize_max"] = resize_max
+            print(f"📏 LoFTR Resolution Override: resize_max = {resize_max}")
 
         match_dense.main(
             conf,
@@ -706,8 +740,8 @@ def run_matching(
             images_path,
             export_dir=output_path,
             matches=match_path,
-            features=feature_path, 
-            max_kps=8192 # cap keypoints to keep file size reasonable
+            features=feature_path,
+            max_kps=8192,  # cap keypoints to keep file size reasonable
         )
     else:
         # Standard Feature Matching
@@ -717,12 +751,11 @@ def run_matching(
             features=feature_path,
             matches=match_path,
         )
-    
 
     # --- Check for users additional pairs ---
     additional_pairs_files = [
         images_path.parent / "pairs_additional.txt",
-        output_path / "pairs_additional.txt"
+        output_path / "pairs_additional.txt",
     ]
 
     additional_pairs = set()
@@ -743,7 +776,7 @@ def run_matching(
 
     if additional_pairs:
         print(f"Loaded {len(additional_pairs)} additional pairs.")
-        
+
         # Load existing pairs
         existing_pairs = set()
         if pairs_path.exists():
@@ -756,7 +789,7 @@ def run_matching(
                     if p1 > p2:
                         p1, p2 = p2, p1
                     existing_pairs.add((p1, p2))
-        
+
         # Merge
         total_pairs = existing_pairs.union(additional_pairs)
         print(f"Merging additional pairs: {len(existing_pairs)} -> {len(total_pairs)}")
@@ -764,8 +797,6 @@ def run_matching(
         with open(pairs_path, "w") as f:
             for p1, p2 in sorted(total_pairs):
                 f.write(f"{p1} {p2}\n")
-
-
 
     return match_path, pairs_path
 
@@ -803,6 +834,7 @@ def update_camera_intrinsics(database_path, cameras_path):
             "SIMPLE_RADIAL": 2,
             "RADIAL": 3,
             "OPENCV": 4,
+            "OPENCV_FISHEYE": 5,
         }
         model_id = model_map.get(model_name, 1)
 
@@ -934,7 +966,7 @@ def run_alignment(sparse_path, images_path, method="MANHATTAN-WORLD"):
     except subprocess.CalledProcessError as e:
         print(f"❌ Error running model alignment: {e}")
         # Non-fatal?
-    
+
     return sparse_path
 
 
@@ -1077,7 +1109,7 @@ def run_undistortion(sparse_path, dataset_path, output_path, downscale_factors=N
     mask_car_path = dataset_path / "masks" / "car"
     if mask_car_path.exists():
         print(f"Found masks at {mask_car_path}. Undistorting masks...")
-        
+
         # Create a temp directory for mask raw output (since colmap forces 'images' folder)
         mask_output_temp = undistorted_output / "masks_temp_colmap"
         mask_output_temp.mkdir(exist_ok=True, parents=True)
@@ -1097,19 +1129,19 @@ def run_undistortion(sparse_path, dataset_path, output_path, downscale_factors=N
 
         try:
             subprocess.run(cmd_mask, check=True)
-            
+
             # Move result to proper location: output/undistorted/masks/car
             # COLMAP create 'images' inside the output path
             src_masks = mask_output_temp / "images"
             dst_masks = undistorted_output / "masks" / "car"
-            
+
             if src_masks.exists():
                 if dst_masks.exists():
                     shutil.rmtree(dst_masks)
                 dst_masks.parent.mkdir(exist_ok=True, parents=True)
                 shutil.move(str(src_masks), str(dst_masks))
                 print(f"Undistorted masks saved to {dst_masks}")
-            
+
             # Cleanup temp dir
             shutil.rmtree(mask_output_temp)
 
@@ -1141,10 +1173,12 @@ def run_undistortion(sparse_path, dataset_path, output_path, downscale_factors=N
 
                     h, w = img.shape[:2]
                     new_h, new_w = h // factor, w // factor
-                    
+
                     # Resize
-                    img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-                    
+                    img_resized = cv2.resize(
+                        img, (new_w, new_h), interpolation=cv2.INTER_AREA
+                    )
+
                     # Save
                     cv2.imwrite(str(dst_dir / img_path.name), img_resized)
 
@@ -1155,15 +1189,17 @@ def run_undistortion(sparse_path, dataset_path, output_path, downscale_factors=N
         if src_masks_root.exists():
             # Find all subdirectories (e.g. 'car', 'person', etc.)
             mask_categories = [p for p in src_masks_root.iterdir() if p.is_dir()]
-            
+
             for category_dir in mask_categories:
                 category_name = category_dir.name
                 mask_files = sorted([p for p in category_dir.iterdir() if p.is_file()])
-                
+
                 if not mask_files:
                     continue
 
-                print(f"Downscaling {len(mask_files)} masks for category '{category_name}'...")
+                print(
+                    f"Downscaling {len(mask_files)} masks for category '{category_name}'..."
+                )
 
                 for factor in downscale_factors:
                     # Structure: undistorted/masks_{factor}/{category_name}
@@ -1181,7 +1217,9 @@ def run_undistortion(sparse_path, dataset_path, output_path, downscale_factors=N
                         new_h, new_w = h // factor, w // factor
 
                         # Resize NEAREST to keep binary nature (or close to it)
-                        mask_resized = cv2.resize(mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST)
+                        mask_resized = cv2.resize(
+                            mask, (new_w, new_h), interpolation=cv2.INTER_NEAREST
+                        )
 
                         cv2.imwrite(str(dst_dir / mask_path.name), mask_resized)
 
@@ -1586,11 +1624,11 @@ def main():
         default=20,
         help="Number of candidates for Global Retrieval (default: 30).",
     )
-    parser.add_argument(
-        "--mask",
-        action="store_true",
-        help="Use masks for ALIKED feature extraction (ignores areas where mask > 0.5)",
-    )
+    # parser.add_argument(
+    #     "--mask",
+    #     action="store_true",
+    #     help="Use masks for ALIKED feature extraction (ignores areas where mask > 0.5)",
+    # )
     parser.add_argument(
         "--keypoints_viz",
         action="store_true",
@@ -1638,8 +1676,8 @@ def main():
     parser.add_argument(
         "--align_method",
         choices=["MANHATTAN-WORLD", "IMAGE-ORIENTATION", "disabled"],
-        default="disabled",
-        help="Method for model orientation alignment (default: disabled). Use 'MANHATTAN-WORLD' for urban scenes.",
+        default="IMAGE-ORIENTATION",
+        help="Method for model orientation alignment (default: IMAGE-ORIENTATION). Use 'MANHATTAN-WORLD' for urban scenes.",
     )
 
     args = parser.parse_args()
@@ -1649,7 +1687,7 @@ def main():
     # Handle the --hybrid alias
     if args.hybrid:
         args.matching_type = "hybrid"
-    
+
     # Handle the --loftr alias
     if args.loftr:
         args.feature_type = "loftr"
@@ -1696,16 +1734,17 @@ def main():
         print(f"   • NMS Radius:     {args.nms_radius}")
 
     flags = []
-    if args.mask:
-        if args.feature_type == "loftr":
-             flags.append("Warning: Mask ignored for LoFTR")
-        else:
-             flags.append("🎭 Masking")
+    # if args.mask:
+    # #     if args.feature_type == "loftr":
+    # #         flags.append("Warning: Mask ignored for LoFTR")
+    # #     else:
+    # #         flags.append("🎭 Masking")
+    #     pass
     if args.keypoints_viz:
         if args.feature_type == "loftr":
-             flags.append("Warning: Viz ignored for LoFTR")
+            flags.append("Warning: Viz ignored for LoFTR")
         else:
-             flags.append("🎨 Visualization")
+            flags.append("🎨 Visualization")
     if not args.skip_undistort:
         flags.append("📐 Undistort")
     if args.align_method != "disabled":
@@ -1730,7 +1769,7 @@ def main():
             images_path,
             output_path,
             feature_type=args.feature_type,
-            use_mask=args.mask,
+            # use_mask=False, # args.mask,
             dataset_path=dataset_path,
             keypoints_viz=args.keypoints_viz,
             resize_max=args.resize_max,
@@ -1779,7 +1818,9 @@ def main():
 
         if args.align_method != "disabled":
             # Updates sparse_output in-place (conceptually, on disk)
-            sparse_output = run_alignment(sparse_output, images_path, method=args.align_method)
+            sparse_output = run_alignment(
+                sparse_output, images_path, method=args.align_method
+            )
 
         if args.normalize:
             # Updates sparse_output in-place (conceptually, on disk)
@@ -1804,7 +1845,7 @@ def main():
             print("🔄" * 10 + "\n")
 
             pairs_covis_path = output_path / "pairs_covisibility.txt"
-            
+
             # Find the actual sparse model path (handle 0/ subdir)
             model_path_for_covis = sparse_output
             if (model_path_for_covis / "0").exists():
@@ -1814,33 +1855,36 @@ def main():
             pairs_from_covisibility.main(
                 model_path_for_covis,
                 pairs_covis_path,
-                num_matched=args.covisibility_num
+                num_matched=args.covisibility_num,
             )
 
             # Re-run Matching with new pairs
-            print(f"Matching features for {args.covisibility_num} covisibility pairs...")
-            
+            print(
+                f"Matching features for {args.covisibility_num} covisibility pairs..."
+            )
+
             if args.feature_type == "loftr":
-                 from hloc import match_dense
-                 conf = match_dense.confs["loftr"]
-                 if args.resize_max:
-                     conf["preprocessing"]["resize_max"] = args.resize_max
-                 
-                 match_dense.main(
+                from hloc import match_dense
+
+                conf = match_dense.confs["loftr"]
+                if args.resize_max:
+                    conf["preprocessing"]["resize_max"] = args.resize_max
+
+                match_dense.main(
                     conf,
                     pairs_covis_path,
                     images_path,
                     export_dir=output_path,
                     matches=match_path,
-                    features=feature_path, 
-                    max_kps=8192
-                 )
+                    features=feature_path,
+                    max_kps=8192,
+                )
             else:
                 match_features.main(
                     match_features.confs[FEATURE_CONFIGS[args.feature_type]["matcher"]],
                     pairs_covis_path,
                     features=feature_path,
-                    matches=match_path
+                    matches=match_path,
                 )
 
             # Re-run Mapping (Incremental mapping to update the model)
@@ -1848,27 +1892,29 @@ def main():
             # We clear the sparse dir to re-map with better connectivity
             shutil.rmtree(str(sparse_output))
             sparse_output.mkdir()
-            
+
             # MERGE PAIRS for the final mapping
             # We need to explicitly tell import_matches to look for the new pairs too.
             pairs_merged_path = output_path / "pairs_merged.txt"
             unique_pairs = set()
-            
+
             # Read original
             if pairs_path.exists():
                 with open(pairs_path, "r") as f:
-                    for line in f: unique_pairs.add(line.strip())
-            
+                    for line in f:
+                        unique_pairs.add(line.strip())
+
             # Read covisibility
             if pairs_covis_path.exists():
                 with open(pairs_covis_path, "r") as f:
-                    for line in f: unique_pairs.add(line.strip())
-            
+                    for line in f:
+                        unique_pairs.add(line.strip())
+
             # Write merged
             with open(pairs_merged_path, "w") as f:
                 for line in sorted(unique_pairs):
                     f.write(f"{line}\n")
-            
+
             run_mapping(
                 output_path,
                 dataset_path,
@@ -1876,11 +1922,11 @@ def main():
                 cameras_path,
                 feature_path,
                 match_path,
-                pairs_merged_path, # Use the MERGED list
+                pairs_merged_path,  # Use the MERGED list
                 camera_model=args.camera_model,
                 mapper=args.mapper,
             )
-            
+
             # Re-export
             print("Exporting refined reconstruction...")
             export_reconstruction(sparse_output, output_path)
